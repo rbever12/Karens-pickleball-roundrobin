@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mixed Doubles Round Robin</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #2d6a4f;
+    --green-light: #52b788;
+    --green-bright: #74c69d;
+    --yellow: #f4d35e;
+    --yellow-dark: #e8b422;
+    --court-bg: #0a1628;
+    --bg: #0b1e3a;
+    --surface: #0f2444;
+    --surface2: #132d52;
+    --text: #e8f5e9;
+    --text-muted: #7aab8a;
+    --border: #2d5a3d;
+    --red: #e07a5f;
+    --blue: #6a9fd8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Court texture background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, transparent, transparent 40px, rgba(45,106,79,0.04) 40px, rgba(45,106,79,0.04) 41px),
+      repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(45,106,79,0.04) 40px, rgba(45,106,79,0.04) 41px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 0 20px 60px; }
+
+  /* HEADER */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 32px 0 24px;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 32px;
+  }
+  .logo {
+    width: 58px; height: 58px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    animation: spin-in 0.6s ease;
+  }
+  @keyframes spin-in {
+    from { transform: rotate(-180deg) scale(0); opacity: 0; }
+    to { transform: rotate(0) scale(1); opacity: 1; }
+  }
+  h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(28px, 5vw, 48px);
+    letter-spacing: 2px;
+    color: var(--green-bright);
+    line-height: 1;
+  }
+  h1 span { color: #f4822a; }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 6px;
+    margin-bottom: 28px;
+    border: 1px solid var(--border);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 10px 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab-btn.active {
+    background: var(--green);
+    color: var(--text);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .tab-btn:hover:not(.active) { color: var(--text); background: var(--surface2); }
+
+  .tab-panel { display: none; animation: fadein 0.3s ease; }
+  .tab-panel.active { display: block; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* CARDS */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 1px;
+    color: var(--green-bright);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge {
+    background: var(--green);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0;
+  }
+  .badge.yellow { background: var(--yellow-dark); color: #1a1a00; }
+
+  /* SIGNUP FORM */
+  .signup-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  input[type="text"] {
+    flex: 1;
+    padding: 12px 16px;
+    background: var(--court-bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--green-light); }
+  input[type="text"]::placeholder { color: var(--text-muted); }
+
+  .btn {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--green-light); color: #0a1a10; }
+  .btn-primary:hover { background: var(--green-bright); }
+  .btn-primary:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+  .btn-danger { background: transparent; border: 1px solid var(--red); color: var(--red); padding: 6px 12px; font-size: 13px; }
+  .btn-danger:hover { background: var(--red); color: white; }
+  .btn-yellow { background: var(--yellow); color: #1a1a00; }
+  .btn-yellow:hover { background: var(--yellow-dark); }
+  .btn-outline { background: transparent; border: 2px solid var(--border); color: var(--text-muted); }
+  .btn-outline:hover { border-color: var(--green-light); color: var(--text); }
+
+  /* COURT NUMBER SELECTOR */
+  .court-select-row {
+    background: var(--court-bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .court-select-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .court-pickers {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .court-picker-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .court-picker-label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+  select.court-picker {
+    background: var(--surface2);
+    border: 2px solid var(--green);
+    border-radius: 8px;
+    color: var(--green-bright);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 24px;
+    letter-spacing: 1px;
+    padding: 6px 10px;
+    outline: none;
+    cursor: pointer;
+    width: 72px;
+    text-align: center;
+    -webkit-appearance: auto;
+    transition: border-color 0.2s;
+  }
+  select.court-picker:focus { border-color: var(--green-bright); }
+  select.court-picker option {
+    background: var(--surface);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 16px;
+  }
+  select.court-picker.conflict { border-color: var(--red); color: var(--red); }
+  .court-select-info {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 10px;
+  }
+  .court-conflict-msg {
+    font-size: 12px;
+    color: var(--red);
+    font-weight: 700;
+    margin-top: 6px;
+    display: none;
+  }
+  .court-conflict-msg.visible { display: block; }
+
+  /* PLAYER LIST */
+  .player-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .player-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--court-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    animation: slidein 0.25s ease;
+  }
+  @keyframes slidein { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+  .player-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    color: var(--text-muted);
+    width: 28px;
+  }
+  .player-name { font-size: 16px; font-weight: 500; flex: 1; padding: 0 12px; }
+  .player-status { font-size: 12px; color: var(--text-muted); }
+
+  /* SUBSTITUTES */
+  .sub-divider {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    letter-spacing: 2px;
+    color: var(--yellow);
+    margin: 20px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sub-divider::before, .sub-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .player-item.sub-item {
+    border-color: #5a4a10;
+    background: #1a1500;
+  }
+  .sub-tag {
+    font-size: 11px;
+    font-weight: 800;
+    background: var(--yellow-dark);
+    color: #1a1000;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-left: 6px;
+  }
+  .sitting-out.sub-in {
+    border-color: var(--yellow-dark);
+    color: var(--yellow);
+    background: #1a1500;
+  }
+
+  /* LOCATION & TIME TAB */
+  .field-group { margin-bottom: 18px; }
+  .field-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  textarea {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--court-bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    outline: none;
+    resize: vertical;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { border-color: var(--green-light); }
+  textarea::placeholder { color: var(--text-muted); }
+  input[type="date"], input[type="time"] {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--court-bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+    color-scheme: dark;
+  }
+  input[type="date"]:focus, input[type="time"]:focus { border-color: var(--green-light); }
+  .fields-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .toggle-row { display: flex; gap: 8px; }
+  .toggle-btn {
+    padding: 10px 20px;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .toggle-btn.active { border-color: var(--green-light); color: var(--green-bright); background: rgba(82,183,136,0.1); }
+  .toggle-btn:hover:not(.active) { border-color: var(--border); color: var(--text); }
+  .round-timeline {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .timeline-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--court-bg);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .timeline-round {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    color: var(--yellow);
+    width: 72px;
+    flex-shrink: 0;
+  }
+  .timeline-time { color: var(--green-bright); font-weight: 600; }
+  .summary-box {
+    background: var(--court-bg);
+    border-radius: 12px;
+    padding: 18px 20px;
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--text);
+  }
+  .summary-box strong { color: var(--green-bright); }
+
+  .empty-state {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-muted);
+    font-size: 15px;
+  }
+  .empty-state .icon { font-size: 36px; margin-bottom: 8px; }
+
+  /* SCHEDULE */
+  .round-header {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 26px;
+    letter-spacing: 2px;
+    color: var(--yellow);
+    margin: 24px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .round-header::after {
+    content: '';
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(to right, var(--yellow-dark), transparent);
+  }
+  .courts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .court-card {
+    background: var(--court-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .court-label {
+    background: var(--green);
+    padding: 8px 16px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 1px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .court-label .court-num { color: var(--yellow); }
+
+  /* Editable court name */
+  .court-name-input {
+    background: transparent;
+    border: none;
+    border-bottom: 1.5px dashed rgba(255,255,255,0.35);
+    color: var(--yellow);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    letter-spacing: 1px;
+    width: 130px;
+    outline: none;
+    padding: 1px 4px;
+    cursor: text;
+    transition: border-color 0.2s;
+  }
+  .court-name-input:focus {
+    border-bottom-color: var(--yellow);
+    background: rgba(255,255,255,0.05);
+    border-radius: 3px 3px 0 0;
+  }
+  .court-name-input::placeholder { color: rgba(255,220,80,0.4); font-size: 13px; }
+  .edit-hint {
+    font-size: 10px;
+    color: rgba(255,255,255,0.3);
+    font-family: 'DM Sans', sans-serif;
+    letter-spacing: 0;
+    margin-left: 4px;
+  }
+
+  /* SERVE / RECEIVE ROLES */
+  .roles-display { padding: 0 16px 14px; border-top: 1px solid var(--border); }
+  .roles-title {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    padding: 10px 0 8px;
+  }
+  .role-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+    font-size: 13px;
+  }
+  .role-pill {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .role-pill.server      { background: #1a3a10; color: #74c69d; border: 1px solid #2d6a4f; }
+  .role-pill.partner     { background: #0f2a38; color: #6a9fd8; border: 1px solid #1a4a6a; }
+  .role-pill.receiver    { background: #3a1a0a; color: #e07a5f; border: 1px solid #6a2a10; }
+  .role-pill.rec-partner { background: #2a1a3a; color: #c084fc; border: 1px solid #4a2a6a; }
+  .role-name { font-weight: 600; color: var(--text); }
+
+  /* ROUND COMPLETE BUTTON & REVEAL */
+  .round-complete-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 10px 0 20px;
+    flex-wrap: wrap;
+  }
+  .btn-complete {
+    background: transparent;
+    border: 2px solid var(--border);
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 8px 18px;
+    border-radius: 30px;
+    font-weight: 800;
+  }
+  .btn-complete:hover { border-color: var(--green-light); color: var(--green-bright); }
+  .btn-complete.done  { border-color: var(--green); color: var(--green-bright); background: rgba(45,106,79,0.15); cursor: default; }
+
+  .rotation-reveal {
+    display: none;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--yellow);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    animation: fadein 0.3s ease;
+  }
+  .rotation-reveal.visible { display: block; }
+  .rotation-reveal-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    letter-spacing: 1px;
+    color: var(--yellow);
+    margin-bottom: 8px;
+  }
+  .rotation-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .rotation-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--court-bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 13px;
+  }
+  .rotation-arrow { color: var(--yellow); font-size: 12px; }
+  .teams-display { padding: 14px 16px; }
+  .team {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .team-color {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .team-a .team-color { background: var(--blue); }
+  .team-b .team-color { background: var(--red); }
+  .team-players { font-size: 14px; font-weight: 500; }
+  .vs-divider {
+    text-align: center;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 14px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    margin: 4px 0;
+  }
+  .sitting-out {
+    background: var(--surface2);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  /* SCORES */
+  .score-entry {
+    background: var(--court-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .score-entry-header { font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
+  .score-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .score-team-label { flex: 1; font-size: 14px; font-weight: 500; min-width: 100px; }
+  .score-input-wrap { display: flex; align-items: center; gap: 6px; }
+  input[type="number"] {
+    width: 60px;
+    padding: 8px;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 600;
+    font-family: 'Bebas Neue', sans-serif;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type="number"]:focus { border-color: var(--green-light); }
+  .winner-tag {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--yellow);
+    background: var(--yellow-dark);
+    color: #1a1000;
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+
+  /* STANDINGS */
+  .standings-table { width: 100%; border-collapse: collapse; }
+  .standings-table th {
+    text-align: left;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    border-bottom: 2px solid var(--border);
+  }
+  .standings-table td { padding: 12px 12px; border-bottom: 1px solid var(--border); font-size: 15px; }
+  .standings-table tr:last-child td { border-bottom: none; }
+  .standings-table tr:hover td { background: var(--surface2); }
+  .rank-cell {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    color: var(--text-muted);
+    width: 40px;
+  }
+  .rank-cell.top3 { color: var(--yellow); }
+  .stat-cell { text-align: center; }
+  .win-pct { color: var(--green-bright); font-weight: 600; }
+
+  /* CONTROLS */
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+
+  /* STATUS BAR */
+  .status-bar {
+    display: flex;
+    gap: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 20px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .status-item { font-size: 13px; color: var(--text-muted); }
+  .status-item strong { color: var(--green-bright); font-size: 22px; font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; display: block; }
+
+  /* PRINT */
+  @media print {
+    body { background: white; color: black; }
+    body::before { display: none; }
+    .tabs, .btn, header, .status-bar { display: none !important; }
+    .tab-panel { display: block !important; }
+    .card, .court-card, .score-entry { border: 1px solid #ccc; background: white; }
+    .round-header, .card-title, h1 { color: black; }
+    input[type="number"] { border: 1px solid #ccc; }
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--green);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 999;
+    transition: transform 0.3s ease;
+    white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.error { background: var(--red); }
+
+  /* LIVE SIGNUP DISPLAY BOARD */
+  .live-board {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px 24px 24px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .live-board::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(to right, var(--green), var(--yellow), var(--green-bright));
+    animation: shimmer 2.5s linear infinite;
+    background-size: 200% 100%;
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .live-board-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .live-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--green-bright);
+    box-shadow: 0 0 0 0 rgba(116,198,157,0.6);
+    animation: pulse-dot 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(116,198,157,0.6); }
+    50% { box-shadow: 0 0 0 7px rgba(116,198,157,0); }
+  }
+  .live-board-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 1px;
+    color: var(--green-bright);
+  }
+  .live-board-count {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .live-names-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    min-height: 48px;
+    align-items: flex-start;
+  }
+  .live-name-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--court-bg);
+    border: 1px solid var(--border);
+    border-radius: 30px;
+    padding: 8px 16px;
+    animation: pop-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+  }
+  @keyframes pop-in {
+    0% { opacity: 0; transform: scale(0.5) translateY(10px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .live-name-card.is-sub {
+    border-color: #5a4a10;
+    background: #1a1500;
+  }
+  .live-name-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--green);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 14px;
+    color: white;
+    flex-shrink: 0;
+  }
+  .live-name-card.is-sub .live-name-avatar {
+    background: var(--yellow-dark);
+    color: #1a1000;
+  }
+  .live-name-text {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .live-empty-msg {
+    color: var(--text-muted);
+    font-size: 14px;
+    padding: 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* SELF-REMOVAL SECTION */
+  .withdraw-card {
+    background: var(--surface);
+    border: 1px solid #5a2020;
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  .withdraw-card .card-title { color: var(--red); margin-bottom: 4px; }
+  .withdraw-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  .withdraw-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .withdraw-confirm {
+    background: #1a0a0a;
+    border: 1px solid #5a2020;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-top: 12px;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .withdraw-confirm.visible { display: flex; animation: fadein 0.25s ease; }
+  .withdraw-confirm-msg { font-size: 14px; color: var(--text); flex: 1; min-width: 160px; }
+  .withdraw-confirm-msg strong { color: var(--red); }
+  .btn-confirm-remove { background: var(--red); color: white; font-size: 14px; padding: 9px 16px; }
+  .btn-confirm-remove:hover { background: #c0553a; }
+  .btn-cancel-remove { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 14px; padding: 9px 16px; }
+  .btn-cancel-remove:hover { color: var(--text); border-color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+    <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Paddle handle -->
+      <rect x="23" y="33" width="7" height="16" rx="3.5" fill="#1a1a1a" stroke="#444" stroke-width="1"/>
+      <!-- Paddle grip wrap lines -->
+      <line x1="23.5" y1="37" x2="29.5" y2="37" stroke="#666" stroke-width="1.2"/>
+      <line x1="23.5" y1="40" x2="29.5" y2="40" stroke="#666" stroke-width="1.2"/>
+      <line x1="23.5" y1="43" x2="29.5" y2="43" stroke="#666" stroke-width="1.2"/>
+      <!-- Paddle head -->
+      <ellipse cx="26" cy="22" rx="13" ry="14" fill="#111111" stroke="#333" stroke-width="1.5"/>
+      <!-- Paddle face texture holes (honeycomb dots) -->
+      <circle cx="22" cy="17" r="1.1" fill="#2a2a2a"/>
+      <circle cx="26" cy="17" r="1.1" fill="#2a2a2a"/>
+      <circle cx="30" cy="17" r="1.1" fill="#2a2a2a"/>
+      <circle cx="20" cy="21" r="1.1" fill="#2a2a2a"/>
+      <circle cx="24" cy="21" r="1.1" fill="#2a2a2a"/>
+      <circle cx="28" cy="21" r="1.1" fill="#2a2a2a"/>
+      <circle cx="32" cy="21" r="1.1" fill="#2a2a2a"/>
+      <circle cx="22" cy="25" r="1.1" fill="#2a2a2a"/>
+      <circle cx="26" cy="25" r="1.1" fill="#2a2a2a"/>
+      <circle cx="30" cy="25" r="1.1" fill="#2a2a2a"/>
+      <circle cx="20" cy="29" r="1.1" fill="#2a2a2a"/>
+      <circle cx="24" cy="29" r="1.1" fill="#2a2a2a"/>
+      <circle cx="28" cy="29" r="1.1" fill="#2a2a2a"/>
+      <!-- Lime green pickleball (overlapping top-right of paddle) -->
+      <circle cx="36" cy="13" r="9" fill="#BFFF00" stroke="#8fcc00" stroke-width="1.2"/>
+      <!-- Ball holes pattern -->
+      <circle cx="33" cy="10" r="1.3" fill="#8fcc00"/>
+      <circle cx="37" cy="10" r="1.3" fill="#8fcc00"/>
+      <circle cx="39" cy="13" r="1.3" fill="#8fcc00"/>
+      <circle cx="35" cy="14" r="1.3" fill="#8fcc00"/>
+      <circle cx="33" cy="16" r="1.3" fill="#8fcc00"/>
+      <circle cx="37" cy="16" r="1.3" fill="#8fcc00"/>
+      <!-- Ball shine -->
+      <ellipse cx="33" cy="10" rx="2.5" ry="1.5" fill="rgba(255,255,255,0.25)" transform="rotate(-20 33 10)"/>
+    </svg>
+  </div>
+    <div>
+      <h1>MIXED DOUBLES <span>ROUND ROBIN</span></h1>
+    </div>
+  </header>
+
+  <div class="status-bar" id="statusBar">
+    <div class="status-item"><strong id="statPlayers">0</strong>Players Signed Up</div>
+    <div class="status-item"><strong id="statSubs">0</strong>Substitutes</div>
+    <div class="status-item"><strong id="statCourts">0</strong>Courts Active</div>
+    <div class="status-item"><strong id="statRounds">0</strong>Rounds Generated</div>
+  </div>
+
+  <!-- PERSISTENT SIGNUP SECTION (always visible) -->
+  <div class="live-board">
+    <div class="live-board-header">
+      <div class="live-dot"></div>
+      <span class="live-board-title">Live Signup Board</span>
+      <span class="live-board-count" id="liveBoardCount">0 of 12 spots filled</span>
+    </div>
+    <div class="live-names-grid" id="liveNamesGrid">
+      <div class="live-empty-msg">⏳ Waiting for players to sign up...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Player Registration <span class="badge" id="playerCountBadge">0 / 12</span></div>
+    <div class="court-select-row">
+      <span class="court-select-label">🏟 Select Court Numbers for this Session</span>
+      <div class="court-pickers">
+        <div class="court-picker-wrap">
+          <span class="court-picker-label">Court 1</span>
+          <select class="court-picker" id="courtPick1" onchange="validateCourtPicks()">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
+            <option value="16">16</option>
+            <option value="17">17</option>
+            <option value="18">18</option>
+            <option value="19">19</option>
+            <option value="20">20</option>
+          </select>
+        </div>
+        <div class="court-picker-wrap">
+          <span class="court-picker-label">Court 2</span>
+          <select class="court-picker" id="courtPick2" onchange="validateCourtPicks()">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
+            <option value="16">16</option>
+            <option value="17">17</option>
+            <option value="18">18</option>
+            <option value="19">19</option>
+            <option value="20">20</option>
+          </select>
+        </div>
+        <div class="court-picker-wrap">
+          <span class="court-picker-label">Court 3</span>
+          <select class="court-picker" id="courtPick3" onchange="validateCourtPicks()">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
+            <option value="16">16</option>
+            <option value="17">17</option>
+            <option value="18">18</option>
+            <option value="19">19</option>
+            <option value="20">20</option>
+          </select>
+        </div>
+      </div>
+      <div class="court-select-info" id="courtSelectInfo">Courts 1, 2, 3 selected · 3 courts · up to 12 players active per round</div>
+      <div class="court-conflict-msg" id="courtConflictMsg">⚠️ Duplicate court numbers — please select 3 different courts.</div>
+    </div>
+    <div class="signup-row">
+      <input type="text" id="playerNameInput" placeholder="Enter player name..." maxlength="30" onkeydown="if(event.key==='Enter') addPlayer()">
+      <button class="btn btn-primary" onclick="addPlayer()" id="addBtn">+ Add Player</button>
+    </div>
+    <div class="signup-row" style="margin-top:-6px">
+      <input type="text" id="subNameInput" placeholder="Enter substitute name..." maxlength="30" onkeydown="if(event.key==='Enter') addSub()" style="border-color:#5a4a10">
+      <button class="btn btn-yellow" onclick="addSub()" id="addSubBtn">+ Add Sub</button>
+    </div>
+    <ul class="player-list" id="playerList">
+      <li class="empty-state"><div class="icon">👥</div>No players yet. Add up to 12 players above.</li>
+    </ul>
+  </div>
+
+  <div class="controls" style="margin-bottom:12px">
+    <button class="btn btn-yellow" onclick="generateSchedule()" id="generateBtn">⚡ Generate Schedule</button>
+    <button class="btn btn-outline" onclick="clearAll()">🗑 Clear All</button>
+  </div>
+
+  <div class="withdraw-card">
+    <div class="card-title">⚠️ Can't Make It?</div>
+    <div class="withdraw-hint">If you signed up but have a conflict, enter your name below to remove yourself from the list.</div>
+    <div class="withdraw-row">
+      <input type="text" id="withdrawInput" placeholder="Enter your name exactly as signed up..." maxlength="30" onkeydown="if(event.key==='Enter') lookupWithdraw()" style="border-color:#5a2020; flex:1;">
+      <button class="btn btn-danger" style="font-weight:800;padding:12px 20px" onclick="lookupWithdraw()">🚪 Remove Me</button>
+    </div>
+    <div class="withdraw-confirm" id="withdrawConfirm">
+      <div class="withdraw-confirm-msg">Remove <strong id="withdrawNameDisplay"></strong> from the signup list?</div>
+      <button class="btn btn-confirm-remove" onclick="confirmWithdraw()">✓ Yes, Remove Me</button>
+      <button class="btn btn-cancel-remove" onclick="cancelWithdraw()">✕ Cancel</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('schedule')">📅 Schedule</button>
+    <button class="tab-btn" onclick="showTab('location')">📍 Location & Time</button>
+  </div>
+
+  <!-- SCHEDULE TAB -->
+  <div class="tab-panel active" id="tab-schedule">
+    <div id="scheduleContent">
+      <div class="empty-state" style="padding:60px 0">
+        <div class="icon">📅</div>
+        Add players above and click "Generate Schedule" to begin.
+      </div>
+    </div>
+    <div class="controls" id="scheduleControls" style="display:none">
+      <button class="btn btn-outline" onclick="printSchedule()">🖨 Print Schedule</button>
+    </div>
+  </div>
+
+  <!-- LOCATION & TIME TAB -->
+  <div class="tab-panel" id="tab-location">
+    <div class="card">
+      <div class="card-title">📍 Venue & Location</div>
+      <div class="field-group">
+        <label class="field-label">Facility / Venue Name</label>
+        <input type="text" id="locVenue" placeholder="e.g. Greenfield Recreation Center" maxlength="60" oninput="saveLocation()">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Address</label>
+        <input type="text" id="locAddress" placeholder="e.g. 123 Main St, Springfield, AZ" maxlength="80" oninput="saveLocation()">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Indoor / Outdoor</label>
+        <div class="toggle-row">
+          <button class="toggle-btn active" id="toggleIndoor" onclick="setIndoorOutdoor('Indoor')">🏢 Indoor</button>
+          <button class="toggle-btn" id="toggleOutdoor" onclick="setIndoorOutdoor('Outdoor')">☀️ Outdoor</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Additional Notes</label>
+        <textarea id="locNotes" placeholder="e.g. Enter through side door, parking in Lot B..." maxlength="200" rows="3" oninput="saveLocation()"></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🕐 Date & Time</div>
+      <div class="fields-row">
+        <div class="field-group" style="flex:1">
+          <label class="field-label">Event Date</label>
+          <input type="date" id="locDate" oninput="saveLocation()">
+        </div>
+        <div class="field-group" style="flex:1">
+          <label class="field-label">Start Time</label>
+          <input type="time" id="locStart" oninput="saveLocation()">
+        </div>
+        <div class="field-group" style="flex:1">
+          <label class="field-label">End Time</label>
+          <input type="time" id="locEnd" oninput="saveLocation()">
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Round Duration (minutes)</label>
+        <input type="number" id="locRoundDuration" min="5" max="60" value="15" style="width:100px" oninput="saveLocation(); calcTimes()">
+      </div>
+      <div id="roundTimeline" class="round-timeline"></div>
+    </div>
+
+    <div class="card" id="locationSummaryCard" style="display:none">
+      <div class="card-title">📋 Event Summary <span class="badge yellow">Preview</span></div>
+      <div id="locationSummary" class="summary-box"></div>
+    </div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== STATE =====
+let players = [];
+let subs = [];        // up to 2 substitutes
+let rounds = [];      // rounds[i] = { courts: [{teamA:[name,name], teamB:[name,name]}], sittingOut:[], subIn:[] }
+let courtNames = {};  // courtNames[courtIndex] = string (editable, shared across all rounds)
+let completedRounds = new Set(); // tracks which round indices have been marked complete
+
+// ===== UTILS =====
+function showToast(msg, isError=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = 'toast', 2500);
+}
+
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function updateStatus() {
+  const courts = Math.floor(players.length / 4);
+  const safe = (id, val, prop = 'textContent') => {
+    const el = document.getElementById(id);
+    if (el) el[prop] = val;
+  };
+  safe('statPlayers', players.length);
+  safe('statSubs', subs.length);
+  safe('statCourts', courts);
+  safe('statRounds', rounds.length);
+  safe('playerCountBadge', players.length + ' / 12');
+  safe('subCountBadge', subs.length + ' / 2');
+  safe('addBtn', players.length >= 12, 'disabled');
+  safe('addSubBtn', subs.length >= 2, 'disabled');
+}
+
+// ===== SELF-REMOVAL =====
+let withdrawTarget = null; // { type: 'player'|'sub', index: number, name: string }
+
+function lookupWithdraw() {
+  const input = document.getElementById('withdrawInput');
+  const name = input.value.trim();
+  const confirm = document.getElementById('withdrawConfirm');
+
+  if (!name) return showToast('Please enter your name.', true);
+
+  // Search players (case-insensitive)
+  const pi = players.findIndex(p => p.toLowerCase() === name.toLowerCase());
+  const si = subs.findIndex(p => p.toLowerCase() === name.toLowerCase());
+
+  if (pi === -1 && si === -1) {
+    confirm.classList.remove('visible');
+    withdrawTarget = null;
+    return showToast('Name not found on the signup list.', true);
+  }
+
+  if (pi !== -1) {
+    withdrawTarget = { type: 'player', index: pi, name: players[pi] };
+  } else {
+    withdrawTarget = { type: 'sub', index: si, name: subs[si] };
+  }
+
+  document.getElementById('withdrawNameDisplay').textContent = withdrawTarget.name;
+  confirm.classList.add('visible');
+}
+
+function confirmWithdraw() {
+  if (!withdrawTarget) return;
+  const name = withdrawTarget.name;
+  if (withdrawTarget.type === 'player') {
+    players.splice(withdrawTarget.index, 1);
+  } else {
+    subs.splice(withdrawTarget.index, 1);
+  }
+  rounds = []; courtNames = {};
+  withdrawTarget = null;
+  document.getElementById('withdrawInput').value = '';
+  document.getElementById('withdrawConfirm').classList.remove('visible');
+  renderPlayerList(); renderLiveBoard(); renderSchedule(); updateStatus();
+  showToast('👋 ' + name + ' has been removed from the list.');
+}
+
+function cancelWithdraw() {
+  withdrawTarget = null;
+  document.getElementById('withdrawInput').value = '';
+  document.getElementById('withdrawConfirm').classList.remove('visible');
+}
+
+// ===== LIVE SIGNUP BOARD =====
+function renderLiveBoard() {
+  const grid = document.getElementById('liveNamesGrid');
+  const count = document.getElementById('liveBoardCount');
+  const total = players.length + subs.length;
+
+  if (total === 0) {
+    grid.innerHTML = '<div class="live-empty-msg">⏳ Waiting for players to sign up...</div>';
+    count.textContent = '0 of 12 spots filled';
+    return;
+  }
+
+  const spotsLeft = 12 - players.length;
+  count.textContent = `${players.length} of 12 spots filled${subs.length > 0 ? ' · ' + subs.length + ' sub' + (subs.length > 1 ? 's' : '') : ''}${spotsLeft > 0 ? ' · ' + spotsLeft + ' open' : ' · Full!'}`;
+
+  let html = players.map(p => `
+    <div class="live-name-card">
+      <div class="live-name-avatar">${p.charAt(0).toUpperCase()}</div>
+      <span class="live-name-text">${p}</span>
+    </div>
+  `).join('');
+
+  if (subs.length > 0) {
+    html += subs.map(p => `
+      <div class="live-name-card is-sub">
+        <div class="live-name-avatar">${p.charAt(0).toUpperCase()}</div>
+        <span class="live-name-text">${p} <span style="font-size:11px;opacity:0.7">(sub)</span></span>
+      </div>
+    `).join('');
+  }
+
+  grid.innerHTML = html;
+}
+
+// ===== PLAYER MANAGEMENT =====
+function addPlayer() {
+  const input = document.getElementById('playerNameInput');
+  const name = input.value.trim();
+  if (!name) return showToast('Please enter a name.', true);
+  if (players.length >= 12) return showToast('Maximum 12 players allowed.', true);
+  const allNames = [...players, ...subs];
+  if (allNames.some(p => p.toLowerCase() === name.toLowerCase())) return showToast('Name already registered.', true);
+  players.push(name);
+  input.value = '';
+  renderPlayerList();
+  renderLiveBoard();
+  updateStatus();
+  showToast('✅ ' + name + ' added!');
+}
+
+function addSub() {
+  const input = document.getElementById('subNameInput');
+  const name = input.value.trim();
+  if (!name) return showToast('Please enter a name.', true);
+  if (subs.length >= 2) return showToast('Maximum 2 substitutes allowed.', true);
+  const allNames = [...players, ...subs];
+  if (allNames.some(p => p.toLowerCase() === name.toLowerCase())) return showToast('Name already registered.', true);
+  subs.push(name);
+  input.value = '';
+  renderPlayerList();
+  renderLiveBoard();
+  updateStatus();
+  showToast('✅ ' + name + ' added as substitute!');
+}
+
+function removePlayer(idx) {
+  const name = players[idx];
+  players.splice(idx, 1);
+  rounds = []; courtNames = {};
+  renderPlayerList(); renderLiveBoard(); renderSchedule(); updateStatus();
+  showToast(name + ' removed.');
+}
+
+function removeSub(idx) {
+  const name = subs[idx];
+  subs.splice(idx, 1);
+  rounds = []; courtNames = {};
+  renderPlayerList(); renderLiveBoard(); renderSchedule(); updateStatus();
+  showToast(name + ' removed from substitutes.');
+}
+
+function renderPlayerList() {
+  const ul = document.getElementById('playerList');
+  let html = '';
+
+  if (players.length === 0) {
+    html += '<li class="empty-state"><div class="icon">👥</div>No players yet. Add up to 12 players above.</li>';
+  } else {
+    html += players.map((p, i) => `
+      <li class="player-item">
+        <span class="player-num">${i+1}</span>
+        <span class="player-name">${p}</span>
+        <span class="player-status">${rounds.length > 0 ? 'In schedule' : 'Registered'}</span>
+        <button class="btn btn-danger" onclick="removePlayer(${i})">✕ Remove</button>
+      </li>
+    `).join('');
+  }
+
+  // Substitutes section
+  html += `<li style="list-style:none"><div class="sub-divider">⬇ Substitutes <span id="subCountBadge" class="badge yellow">${subs.length} / 2</span></div></li>`;
+
+  if (subs.length === 0) {
+    html += '<li class="empty-state" style="padding:16px"><div style="font-size:13px;color:var(--text-muted)">No substitutes added yet. Add up to 2 subs below.</div></li>';
+  } else {
+    html += subs.map((p, i) => `
+      <li class="player-item sub-item">
+        <span class="player-num">S${i+1}</span>
+        <span class="player-name">${p}<span class="sub-tag">SUB</span></span>
+        <span class="player-status">Rotates in when needed</span>
+        <button class="btn btn-danger" onclick="removeSub(${i})">✕ Remove</button>
+      </li>
+    `).join('');
+  }
+
+  ul.innerHTML = html;
+}
+
+// ===== SCHEDULE GENERATION =====
+function getSelectedCourts() {
+  return [
+    parseInt(document.getElementById('courtPick1').value),
+    parseInt(document.getElementById('courtPick2').value),
+    parseInt(document.getElementById('courtPick3').value),
+  ];
+}
+
+function validateCourtPicks() {
+  const picks = getSelectedCourts();
+  const unique = new Set(picks);
+  const hasDupe = unique.size < picks.length;
+  const infoEl = document.getElementById('courtSelectInfo');
+  const conflictEl = document.getElementById('courtConflictMsg');
+  document.querySelectorAll('.court-picker').forEach((sel, i) => {
+    sel.classList.toggle('conflict', hasDupe && picks.filter(p => p === picks[i]).length > 1);
+  });
+  conflictEl.classList.toggle('visible', hasDupe);
+  if (!hasDupe) {
+    infoEl.textContent = `Courts ${picks.join(', ')} selected · 3 courts · up to 12 players active per round`;
+  }
+  return !hasDupe;
+}
+
+function generateSchedule() {
+  if (players.length < 4) return showToast('Need at least 4 players to generate a schedule.', true);
+  if (!validateCourtPicks()) return showToast('Please select 3 different court numbers.', true);
+
+  const pickedCourtNums = getSelectedCourts();
+  // Pre-fill courtNames with the selected court numbers
+  pickedCourtNums.forEach((num, i) => { courtNames[i] = `Court ${num}`; });
+
+  rounds = [];
+  completedRounds = new Set();
+  const n = players.length;
+  const numCourts = 3;
+  const activePlayers = numCourts * 4;
+  const numRounds = 8;
+
+  let rotation = [...Array(n).keys()];
+  let subRotation = 0;
+
+  for (let r = 0; r < numRounds; r++) {
+    const sittingIndices = rotation.slice(activePlayers);
+    const sittingNames = sittingIndices.map(i => players[i]);
+    const active = rotation.slice(0, activePlayers);
+
+    let subIn = [];
+    if (subs.length > 0 && sittingNames.length > 0) {
+      for (let s = 0; s < Math.min(subs.length, sittingNames.length); s++) {
+        subIn.push(subs[(subRotation + s) % subs.length]);
+      }
+      subRotation = (subRotation + subIn.length) % Math.max(subs.length, 1);
+    }
+
+    let courts = [];
+    let shuffled = [...active];
+    const half = shuffled.length / 2;
+    let teamAPool = shuffled.slice(0, half);
+    let teamBPool = shuffled.slice(half);
+
+    for (let c = 0; c < numCourts; c++) {
+      const teamA = [players[teamAPool[c*2]], players[teamAPool[c*2+1]]];
+      const teamB = [players[teamBPool[c*2]], players[teamBPool[c*2+1]]];
+      const serverTeam  = (r + c) % 2 === 0 ? teamA : teamB;
+      const receiveTeam = (r + c) % 2 === 0 ? teamB : teamA;
+      courts.push({
+        teamA, teamB,
+        server:          serverTeam[0],
+        serverPartner:   serverTeam[1],
+        receiver:        receiveTeam[0],
+        receiverPartner: receiveTeam[1]
+      });
+    }
+
+    rounds.push({ courts, sittingOut: sittingNames, subIn });
+
+    const last = rotation.pop();
+    rotation.splice(1, 0, last);
+  }
+
+  const pickedNums = getSelectedCourts();
+  renderSchedule();
+  updateStatus();
+  showTab.call({}, 'schedule');
+  document.querySelectorAll('.tab-btn')[0].classList.add('active');
+  document.querySelectorAll('.tab-btn')[1].classList.remove('active');
+  showToast(`✅ Schedule generated — 8 rounds on Courts ${pickedNums.join(', ')}!`);
+}
+
+function renderSchedule() {
+  const div = document.getElementById('scheduleContent');
+  const ctrl = document.getElementById('scheduleControls');
+  if (rounds.length === 0) {
+    div.innerHTML = '<div class="empty-state" style="padding:60px 0"><div class="icon">📅</div>Sign up players and click "Generate Schedule" to begin.</div>';
+    ctrl.style.display = 'none';
+    return;
+  }
+  ctrl.style.display = 'flex';
+
+  const numCourts = rounds[0].courts.length;
+  for (let c = 0; c < numCourts; c++) {
+    if (!courtNames[c]) courtNames[c] = '';
+  }
+
+  div.innerHTML = rounds.map((round, ri) => {
+    const isDone = completedRounds.has(ri);
+
+    // Build rotation reveal: show which players moved where compared to previous round
+    let rotationHTML = '';
+    if (isDone && ri + 1 < rounds.length) {
+      const nextRound = rounds[ri + 1];
+      const currentPlayers = round.courts.flatMap(c => [...c.teamA, ...c.teamB]);
+      const nextPlayers    = nextRound.courts.flatMap(c => [...c.teamA, ...c.teamB]);
+
+      // Map player → court this round vs next round
+      const thisCourtMap = {};
+      round.courts.forEach((c, ci) => { [...c.teamA, ...c.teamB].forEach(p => { thisCourtMap[p] = ci + 1; }); });
+      const nextCourtMap = {};
+      nextRound.courts.forEach((c, ci) => { [...c.teamA, ...c.teamB].forEach(p => { nextCourtMap[p] = ci + 1; }); });
+
+      const chips = players
+        .filter(p => thisCourtMap[p] && nextCourtMap[p])
+        .map(p => {
+          const from = thisCourtMap[p];
+          const to   = nextCourtMap[p];
+          const moved = from !== to;
+          return `<div class="rotation-chip">
+            <span class="role-name">${p}</span>
+            <span class="rotation-arrow">${moved ? `Court ${from} → Court ${to}` : `stays Court ${from}`}</span>
+          </div>`;
+        }).join('');
+
+      const sittingNext = nextRound.sittingOut.length > 0
+        ? `<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">⏸ Sitting out next round: ${nextRound.sittingOut.join(', ')}${nextRound.subIn && nextRound.subIn.length > 0 ? ' → Sub in: ' + nextRound.subIn.join(', ') : ''}</div>`
+        : '';
+
+      rotationHTML = `
+        <div class="rotation-reveal visible">
+          <div class="rotation-title">🔄 Rotation for Round ${ri + 2}</div>
+          <div class="rotation-list">${chips}</div>
+          ${sittingNext}
+        </div>`;
+    }
+
+    return `
+    <div class="round-header">
+      Round ${ri+1}
+      ${isDone ? '<span style="font-size:13px;color:var(--green-bright);font-family:DM Sans,sans-serif;font-weight:700;letter-spacing:0">✓ Complete</span>' : ''}
+    </div>
+    <div class="courts-grid">
+      ${round.courts.map((court, ci) => `
+        <div class="court-card">
+          <div class="court-label">
+            <span>Court <span class="court-num">${ci+1}</span></span>
+            <span>
+              <input
+                class="court-name-input"
+                type="text"
+                maxlength="24"
+                placeholder="e.g. Court A / Gym 1"
+                value="${courtNames[ci] || ''}"
+                oninput="updateCourtName(${ci}, this.value)"
+                title="Click to set a court location name — applies to all rounds"
+              >
+              <span class="edit-hint">✏ editable</span>
+            </span>
+          </div>
+          <div class="teams-display">
+            <div class="team team-a">
+              <div class="team-color"></div>
+              <div class="team-players">${court.teamA.join(' & ')}</div>
+            </div>
+            <div class="vs-divider">— VS —</div>
+            <div class="team team-b">
+              <div class="team-color"></div>
+              <div class="team-players">${court.teamB.join(' & ')}</div>
+            </div>
+          </div>
+          <div class="roles-display">
+            <div class="roles-title">Game Start Roles</div>
+            <div class="role-row">
+              <span class="role-pill server">SERVER</span>
+              <span class="role-name">${court.server}</span>
+            </div>
+            <div class="role-row">
+              <span class="role-pill partner">SERVER'S PARTNER</span>
+              <span class="role-name">${court.serverPartner}</span>
+            </div>
+            <div class="role-row">
+              <span class="role-pill receiver">RECEIVER</span>
+              <span class="role-name">${court.receiver}</span>
+            </div>
+            <div class="role-row">
+              <span class="role-pill rec-partner">RECEIVER'S PARTNER</span>
+              <span class="role-name">${court.receiverPartner}</span>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    ${round.sittingOut.length > 0 ? `
+      <div class="sitting-out">⏸ Sitting out Round ${ri+1}: ${round.sittingOut.join(', ')}${round.subIn && round.subIn.length > 0 ? ` &nbsp;|&nbsp; <span style="color:var(--yellow)">⬆ Sub${round.subIn.length > 1 ? 's' : ''} in: ${round.subIn.join(', ')}</span>` : ''}</div>
+    ` : (round.subIn && round.subIn.length > 0 ? `<div class="sitting-out sub-in">⬆ Sub${round.subIn.length > 1 ? 's' : ''} rotating in Round ${ri+1}: ${round.subIn.join(', ')}</div>` : '')}
+    <div class="round-complete-bar">
+      ${!isDone
+        ? `<button class="btn btn-complete" onclick="markRoundComplete(${ri})">✓ Mark Round ${ri+1} Complete & Show Rotation</button>`
+        : `<button class="btn btn-complete done" disabled>✓ Round ${ri+1} Complete</button>`
+      }
+    </div>
+    ${rotationHTML}
+  `}).join('');
+}
+
+function updateCourtName(courtIndex, value) {
+  courtNames[courtIndex] = value.trim();
+  document.querySelectorAll(`.court-name-input`).forEach((input, idx) => {
+    const ci = idx % rounds[0].courts.length;
+    if (ci === courtIndex && input !== document.activeElement) {
+      input.value = value;
+    }
+  });
+}
+
+function markRoundComplete(ri) {
+  completedRounds.add(ri);
+  renderSchedule();
+  // Scroll to the rotation reveal for this round
+  setTimeout(() => {
+    const headers = document.querySelectorAll('.round-header');
+    if (headers[ri + 1]) headers[ri + 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+  showToast(`✅ Round ${ri + 1} complete! Rotation revealed.`);
+}
+
+// ===== SCORES =====
+function renderScores() {
+  const div = document.getElementById('scoresContent');
+  const ctrl = document.getElementById('scoreControls');
+  if (rounds.length === 0) {
+    div.innerHTML = '<div class="empty-state" style="padding:60px 0"><div class="icon">🏆</div>Generate a schedule first, then enter scores here.</div>';
+    ctrl.style.display = 'none';
+    return;
+  }
+  ctrl.style.display = 'flex';
+  div.innerHTML = rounds.map((round, ri) => `
+    <div class="card">
+      <div class="card-title">Round ${ri+1} Scores</div>
+      ${round.courts.map((court, ci) => {
+        const sc = (scores[ri] || {})[ci] || {a:'', b:''};
+        const aWin = sc.a !== '' && sc.b !== '' && Number(sc.a) > Number(sc.b);
+        const bWin = sc.a !== '' && sc.b !== '' && Number(sc.b) > Number(sc.a);
+        return `
+        <div class="score-entry">
+          <div class="score-entry-header">Court ${ci+1}</div>
+          <div class="score-row">
+            <div class="score-team-label" style="color:var(--blue)">${court.teamA.join(' & ')}</div>
+            <div class="score-input-wrap">
+              <input type="number" min="0" max="99" value="${sc.a}" id="score-${ri}-${ci}-a" oninput="previewWinner(${ri},${ci})">
+            </div>
+            ${aWin ? '<span class="winner-tag">WINNER</span>' : ''}
+          </div>
+          <div class="score-row">
+            <div class="score-team-label" style="color:var(--red)">${court.teamB.join(' & ')}</div>
+            <div class="score-input-wrap">
+              <input type="number" min="0" max="99" value="${sc.b}" id="score-${ri}-${ci}-b" oninput="previewWinner(${ri},${ci})">
+            </div>
+            ${bWin ? '<span class="winner-tag">WINNER</span>' : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `).join('');
+}
+
+function previewWinner(ri, ci) {
+  const aEl = document.getElementById(`score-${ri}-${ci}-a`);
+  const bEl = document.getElementById(`score-${ri}-${ci}-b`);
+  if (!scores[ri]) scores[ri] = {};
+  scores[ri][ci] = { a: aEl.value, b: bEl.value };
+  // Re-render just the winner tags without full refresh
+  renderScores();
+}
+
+function saveScores() {
+  // Collect all values from inputs
+  rounds.forEach((round, ri) => {
+    if (!scores[ri]) scores[ri] = {};
+    round.courts.forEach((court, ci) => {
+      const aEl = document.getElementById(`score-${ri}-${ci}-a`);
+      const bEl = document.getElementById(`score-${ri}-${ci}-b`);
+      if (aEl && bEl) {
+        scores[ri][ci] = { a: aEl.value, b: bEl.value };
+      }
+    });
+  });
+  renderStandings();
+  updateStatus();
+  showToast('✅ Scores saved! Check Standings tab.');
+}
+
+// ===== STANDINGS =====
+function renderStandings() {
+  const div = document.getElementById('standingsContent');
+  if (players.length === 0) {
+    div.innerHTML = '<div class="empty-state" style="padding:60px 0"><div class="icon">📊</div>Standings will appear after scores are saved.</div>';
+    return;
+  }
+
+  // Build stats per player
+  const stats = {};
+  players.forEach(p => { stats[p] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, gamesPlayed: 0 }; });
+
+  rounds.forEach((round, ri) => {
+    if (!scores[ri]) return;
+    round.courts.forEach((court, ci) => {
+      const sc = scores[ri][ci];
+      if (!sc || sc.a === '' || sc.b === '') return;
+      const aScore = Number(sc.a);
+      const bScore = Number(sc.b);
+      const aWon = aScore > bScore;
+      court.teamA.forEach(p => {
+        if (!stats[p]) return;
+        stats[p].gamesPlayed++;
+        stats[p].pointsFor += aScore;
+        stats[p].pointsAgainst += bScore;
+        if (aWon) stats[p].wins++; else stats[p].losses++;
+      });
+      court.teamB.forEach(p => {
+        if (!stats[p]) return;
+        stats[p].gamesPlayed++;
+        stats[p].pointsFor += bScore;
+        stats[p].pointsAgainst += aScore;
+        if (!aWon) stats[p].wins++; else stats[p].losses++;
+      });
+    });
+  });
+
+  const sorted = players.slice().sort((a, b) => {
+    if (stats[b].wins !== stats[a].wins) return stats[b].wins - stats[a].wins;
+    const pctA = stats[a].gamesPlayed ? stats[a].wins / stats[a].gamesPlayed : 0;
+    const pctB = stats[b].gamesPlayed ? stats[b].wins / stats[b].gamesPlayed : 0;
+    if (pctB !== pctA) return pctB - pctA;
+    const diffA = stats[a].pointsFor - stats[a].pointsAgainst;
+    const diffB = stats[b].pointsFor - stats[b].pointsAgainst;
+    return diffB - diffA;
+  });
+
+  div.innerHTML = `
+    <div class="card">
+      <div class="card-title">Player Standings <span class="badge yellow">Live</span></div>
+      <table class="standings-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Player</th>
+            <th class="stat-cell">W</th>
+            <th class="stat-cell">L</th>
+            <th class="stat-cell">Games</th>
+            <th class="stat-cell">Pts For</th>
+            <th class="stat-cell">Pts Against</th>
+            <th class="stat-cell">+/-</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sorted.map((p, i) => {
+            const s = stats[p];
+            const diff = s.pointsFor - s.pointsAgainst;
+            return `<tr>
+              <td class="rank-cell ${i < 3 ? 'top3' : ''}">${i+1}</td>
+              <td><strong>${p}</strong></td>
+              <td class="stat-cell" style="color:var(--green-bright);font-weight:600">${s.wins}</td>
+              <td class="stat-cell" style="color:var(--red)">${s.losses}</td>
+              <td class="stat-cell">${s.gamesPlayed}</td>
+              <td class="stat-cell">${s.pointsFor}</td>
+              <td class="stat-cell">${s.pointsAgainst}</td>
+              <td class="stat-cell" style="color:${diff >= 0 ? 'var(--green-bright)' : 'var(--red)'}">${diff >= 0 ? '+' : ''}${diff}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ===== PRINT =====
+function printSchedule() {
+  window.print();
+}
+
+// ===== CLEAR ALL =====
+function clearAll() {
+  if (players.length === 0 && subs.length === 0) return;
+  if (!confirm('Clear all players, substitutes, and schedule?')) return;
+  players = [];
+  subs = [];
+  rounds = [];
+  courtNames = {};
+  completedRounds = new Set();
+  renderPlayerList(); renderLiveBoard(); renderSchedule(); updateStatus();
+  showToast('All cleared.');
+}
+
+// ===== LOCATION & TIME =====
+let locationData = {
+  venue: '', address: '', indoorOutdoor: 'Indoor', notes: '', date: '', start: '', end: '', roundDuration: 15
+};
+
+function saveLocation() {
+  locationData.venue       = document.getElementById('locVenue').value;
+  locationData.address     = document.getElementById('locAddress').value;
+  locationData.notes       = document.getElementById('locNotes').value;
+  locationData.date        = document.getElementById('locDate').value;
+  locationData.start       = document.getElementById('locStart').value;
+  locationData.end         = document.getElementById('locEnd').value;
+  locationData.roundDuration = parseInt(document.getElementById('locRoundDuration').value) || 15;
+  calcTimes();
+  renderSummary();
+}
+
+function setIndoorOutdoor(val) {
+  locationData.indoorOutdoor = val;
+  document.getElementById('toggleIndoor').classList.toggle('active', val === 'Indoor');
+  document.getElementById('toggleOutdoor').classList.toggle('active', val === 'Outdoor');
+  renderSummary();
+}
+
+function calcTimes() {
+  const timeline = document.getElementById('roundTimeline');
+  const startVal = document.getElementById('locStart').value;
+  const duration = parseInt(document.getElementById('locRoundDuration').value) || 15;
+  const numRounds = 8;
+
+  if (!startVal) {
+    timeline.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0">Enter a start time to see the round-by-round schedule.</div>';
+    return;
+  }
+
+  const [sh, sm] = startVal.split(':').map(Number);
+  let rows = '';
+  for (let r = 0; r < numRounds; r++) {
+    const totalMins = sh * 60 + sm + r * duration;
+    const endMins   = totalMins + duration;
+    const fmt = (m) => {
+      const h = Math.floor(m / 60) % 24;
+      const min = m % 60;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${h12}:${String(min).padStart(2,'0')} ${ampm}`;
+    };
+    rows += `<div class="timeline-row">
+      <span class="timeline-round">Round ${r+1}</span>
+      <span class="timeline-time">${fmt(totalMins)} — ${fmt(endMins)}</span>
+    </div>`;
+  }
+  timeline.innerHTML = rows;
+}
+
+function renderSummary() {
+  const card = document.getElementById('locationSummaryCard');
+  const box  = document.getElementById('locationSummary');
+  const d    = locationData;
+  const hasAny = d.venue || d.address || d.date || d.start;
+  card.style.display = hasAny ? 'block' : 'none';
+  if (!hasAny) return;
+
+  const fmtDate = d.date ? new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' }) : '—';
+  const fmtTime = (t) => {
+    if (!t) return '—';
+    const [h, m] = t.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${ampm}`;
+  };
+
+  box.innerHTML = `
+    ${d.venue    ? `<div>🏟 <strong>Venue:</strong> ${d.venue}</div>` : ''}
+    ${d.address  ? `<div>📍 <strong>Address:</strong> ${d.address}</div>` : ''}
+    ${d.indoorOutdoor ? `<div>${d.indoorOutdoor === 'Indoor' ? '🏢' : '☀️'} <strong>Type:</strong> ${d.indoorOutdoor}</div>` : ''}
+    ${d.date     ? `<div>📅 <strong>Date:</strong> ${fmtDate}</div>` : ''}
+    ${d.start    ? `<div>🕐 <strong>Start:</strong> ${fmtTime(d.start)}${d.end ? ' &nbsp;→&nbsp; <strong>End:</strong> ' + fmtTime(d.end) : ''}</div>` : ''}
+    ${d.roundDuration ? `<div>⏱ <strong>Round Duration:</strong> ${d.roundDuration} minutes</div>` : ''}
+    ${d.notes    ? `<div>📝 <strong>Notes:</strong> ${d.notes}</div>` : ''}
+  `;
+}
+
+// Init
+updateStatus();
+renderLiveBoard();
+validateCourtPicks();
+</script>
+</body>
+</html>
