@@ -13,7 +13,7 @@
     --yellow: #f4d35e;
     --yellow-dark: #e8b422;
     --court-bg: #0a1628;
-    --bg: #0b1e3a;
+    --bg: #F8F6F0;
     --surface: #0f2444;
     --surface2: #132d52;
     --text: #e8f5e9;
@@ -71,8 +71,10 @@
     letter-spacing: 2px;
     color: var(--green-bright);
     line-height: 1;
+    -webkit-text-stroke: 1.5px black;
+    paint-order: stroke fill;
   }
-  h1 span { color: #f4822a; }
+  h1 span { color: #f4822a; -webkit-text-stroke: 1.5px black; }
 
   /* TABS */
   .tabs {
@@ -1116,13 +1118,46 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
-// ===== STATE =====
-let players = [];
-let subs = [];        // up to 2 substitutes
-let rounds = [];      // rounds[i] = { courts: [{teamA:[name,name], teamB:[name,name]}], sittingOut:[], subIn:[] }
-let courtNames = {};  // courtNames[courtIndex] = string (editable, shared across all rounds)
-let completedRounds = new Set(); // tracks which round indices have been marked complete
+
+<!-- ===== FIREBASE REALTIME SYNC ===== -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+// ===== FIREBASE CONFIG =====
+const firebaseConfig = {
+  apiKey: "AIzaSyAUmd-2q0gH5Rg9y4-q6ti4Preh9nuQ93c",
+  authDomain: "karens-pickleball-roundrobin.firebaseapp.com",
+  databaseURL: "https://karens-pickleball-roundrobin-default-rtdb.firebaseio.com",
+  projectId: "karens-pickleball-roundrobin",
+  storageBucket: "karens-pickleball-roundrobin.firebasestorage.app",
+  messagingSenderId: "1083366858320",
+  appId: "1:1083366858320:web:d2321b844e67193b397b55"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+// ===== DB REFERENCES =====
+const playersRef       = ref(db, 'session/players');
+const subsRef          = ref(db, 'session/subs');
+const roundsRef        = ref(db, 'session/rounds');
+const scoresRef        = ref(db, 'session/scores');
+const courtNamesRef    = ref(db, 'session/courtNames');
+const completedRef     = ref(db, 'session/completedRounds');
+const locationRef      = ref(db, 'session/locationData');
+const courtPicksRef    = ref(db, 'session/courtPicks');
+
+// ===== LOCAL STATE (mirrors Firebase) =====
+let players        = [];
+let subs           = [];
+let rounds         = [];
+let scores         = {};
+let courtNames     = {};
+let completedRounds = new Set();
+let locationData   = { venue:'', address:'', indoorOutdoor:'Indoor', notes:'', date:'', start:'', end:'', roundDuration:15 };
+let courtPicks     = { c1:1, c2:2, c3:3 };
+let _suppressCourtPickWrite = false; // prevent feedback loop
 
 // ===== UTILS =====
 function showToast(msg, isError=false) {
@@ -1140,9 +1175,69 @@ function showTab(name) {
   event.target.classList.add('active');
 }
 
+// ===== FIREBASE LISTENERS (real-time sync to all devices) =====
+onValue(playersRef, snap => {
+  players = snap.val() ? Object.values(snap.val()) : [];
+  renderPlayerList(); renderLiveBoard(); updateStatus();
+});
+
+onValue(subsRef, snap => {
+  subs = snap.val() ? Object.values(snap.val()) : [];
+  renderPlayerList(); renderLiveBoard(); updateStatus();
+});
+
+onValue(roundsRef, snap => {
+  rounds = snap.val() ? snap.val() : [];
+  renderSchedule(); renderScores(); renderStandings(); updateStatus();
+});
+
+onValue(scoresRef, snap => {
+  scores = snap.val() ? snap.val() : {};
+  renderScores(); renderStandings();
+});
+
+onValue(courtNamesRef, snap => {
+  courtNames = snap.val() ? snap.val() : {};
+  renderSchedule();
+});
+
+onValue(completedRef, snap => {
+  completedRounds = new Set(snap.val() ? snap.val() : []);
+  renderSchedule();
+});
+
+onValue(locationRef, snap => {
+  if (snap.val()) {
+    locationData = snap.val();
+    // Update UI fields
+    const fields = ['locVenue','locAddress','locNotes','locDate','locStart','locEnd','locRoundDuration'];
+    const keys   = ['venue','address','notes','date','start','end','roundDuration'];
+    fields.forEach((id, i) => {
+      const el = document.getElementById(id);
+      if (el && locationData[keys[i]] !== undefined) el.value = locationData[keys[i]];
+    });
+    document.getElementById('toggleIndoor').classList.toggle('active', locationData.indoorOutdoor === 'Indoor');
+    document.getElementById('toggleOutdoor').classList.toggle('active', locationData.indoorOutdoor === 'Outdoor');
+    calcTimes(); renderSummary();
+  }
+});
+
+onValue(courtPicksRef, snap => {
+  if (snap.val()) {
+    courtPicks = snap.val();
+    _suppressCourtPickWrite = true;
+    document.getElementById('courtPick1').value = courtPicks.c1;
+    document.getElementById('courtPick2').value = courtPicks.c2;
+    document.getElementById('courtPick3').value = courtPicks.c3;
+    _suppressCourtPickWrite = false;
+    validateCourtPicks();
+  }
+});
+
+// ===== STATUS =====
 function updateStatus() {
   const courts = Math.floor(players.length / 4);
-  const safe = (id, val, prop = 'textContent') => {
+  const safe = (id, val, prop='textContent') => {
     const el = document.getElementById(id);
     if (el) el[prop] = val;
   };
@@ -1156,176 +1251,7 @@ function updateStatus() {
   safe('addSubBtn', subs.length >= 2, 'disabled');
 }
 
-// ===== SELF-REMOVAL =====
-let withdrawTarget = null; // { type: 'player'|'sub', index: number, name: string }
-
-function lookupWithdraw() {
-  const input = document.getElementById('withdrawInput');
-  const name = input.value.trim();
-  const confirm = document.getElementById('withdrawConfirm');
-
-  if (!name) return showToast('Please enter your name.', true);
-
-  // Search players (case-insensitive)
-  const pi = players.findIndex(p => p.toLowerCase() === name.toLowerCase());
-  const si = subs.findIndex(p => p.toLowerCase() === name.toLowerCase());
-
-  if (pi === -1 && si === -1) {
-    confirm.classList.remove('visible');
-    withdrawTarget = null;
-    return showToast('Name not found on the signup list.', true);
-  }
-
-  if (pi !== -1) {
-    withdrawTarget = { type: 'player', index: pi, name: players[pi] };
-  } else {
-    withdrawTarget = { type: 'sub', index: si, name: subs[si] };
-  }
-
-  document.getElementById('withdrawNameDisplay').textContent = withdrawTarget.name;
-  confirm.classList.add('visible');
-}
-
-function confirmWithdraw() {
-  if (!withdrawTarget) return;
-  const name = withdrawTarget.name;
-  if (withdrawTarget.type === 'player') {
-    players.splice(withdrawTarget.index, 1);
-  } else {
-    subs.splice(withdrawTarget.index, 1);
-  }
-  rounds = []; courtNames = {};
-  withdrawTarget = null;
-  document.getElementById('withdrawInput').value = '';
-  document.getElementById('withdrawConfirm').classList.remove('visible');
-  renderPlayerList(); renderLiveBoard(); renderSchedule(); updateStatus();
-  showToast('👋 ' + name + ' has been removed from the list.');
-}
-
-function cancelWithdraw() {
-  withdrawTarget = null;
-  document.getElementById('withdrawInput').value = '';
-  document.getElementById('withdrawConfirm').classList.remove('visible');
-}
-
-// ===== LIVE SIGNUP BOARD =====
-function renderLiveBoard() {
-  const grid = document.getElementById('liveNamesGrid');
-  const count = document.getElementById('liveBoardCount');
-  const total = players.length + subs.length;
-
-  if (total === 0) {
-    grid.innerHTML = '<div class="live-empty-msg">⏳ Waiting for players to sign up...</div>';
-    count.textContent = '0 of 12 spots filled';
-    return;
-  }
-
-  const spotsLeft = 12 - players.length;
-  count.textContent = `${players.length} of 12 spots filled${subs.length > 0 ? ' · ' + subs.length + ' sub' + (subs.length > 1 ? 's' : '') : ''}${spotsLeft > 0 ? ' · ' + spotsLeft + ' open' : ' · Full!'}`;
-
-  let html = players.map(p => `
-    <div class="live-name-card">
-      <div class="live-name-avatar">${p.charAt(0).toUpperCase()}</div>
-      <span class="live-name-text">${p}</span>
-    </div>
-  `).join('');
-
-  if (subs.length > 0) {
-    html += subs.map(p => `
-      <div class="live-name-card is-sub">
-        <div class="live-name-avatar">${p.charAt(0).toUpperCase()}</div>
-        <span class="live-name-text">${p} <span style="font-size:11px;opacity:0.7">(sub)</span></span>
-      </div>
-    `).join('');
-  }
-
-  grid.innerHTML = html;
-}
-
-// ===== PLAYER MANAGEMENT =====
-function addPlayer() {
-  const input = document.getElementById('playerNameInput');
-  const name = input.value.trim();
-  if (!name) return showToast('Please enter a name.', true);
-  if (players.length >= 12) return showToast('Maximum 12 players allowed.', true);
-  const allNames = [...players, ...subs];
-  if (allNames.some(p => p.toLowerCase() === name.toLowerCase())) return showToast('Name already registered.', true);
-  players.push(name);
-  input.value = '';
-  renderPlayerList();
-  renderLiveBoard();
-  updateStatus();
-  showToast('✅ ' + name + ' added!');
-}
-
-function addSub() {
-  const input = document.getElementById('subNameInput');
-  const name = input.value.trim();
-  if (!name) return showToast('Please enter a name.', true);
-  if (subs.length >= 2) return showToast('Maximum 2 substitutes allowed.', true);
-  const allNames = [...players, ...subs];
-  if (allNames.some(p => p.toLowerCase() === name.toLowerCase())) return showToast('Name already registered.', true);
-  subs.push(name);
-  input.value = '';
-  renderPlayerList();
-  renderLiveBoard();
-  updateStatus();
-  showToast('✅ ' + name + ' added as substitute!');
-}
-
-function removePlayer(idx) {
-  const name = players[idx];
-  players.splice(idx, 1);
-  rounds = []; courtNames = {};
-  renderPlayerList(); renderLiveBoard(); renderSchedule(); updateStatus();
-  showToast(name + ' removed.');
-}
-
-function removeSub(idx) {
-  const name = subs[idx];
-  subs.splice(idx, 1);
-  rounds = []; courtNames = {};
-  renderPlayerList(); renderLiveBoard(); renderSchedule(); updateStatus();
-  showToast(name + ' removed from substitutes.');
-}
-
-function renderPlayerList() {
-  const ul = document.getElementById('playerList');
-  let html = '';
-
-  if (players.length === 0) {
-    html += '<li class="empty-state"><div class="icon">👥</div>No players yet. Add up to 12 players above.</li>';
-  } else {
-    html += players.map((p, i) => `
-      <li class="player-item">
-        <span class="player-num">${i+1}</span>
-        <span class="player-name">${p}</span>
-        <span class="player-status">${rounds.length > 0 ? 'In schedule' : 'Registered'}</span>
-        <button class="btn btn-danger" onclick="removePlayer(${i})">✕ Remove</button>
-      </li>
-    `).join('');
-  }
-
-  // Substitutes section
-  html += `<li style="list-style:none"><div class="sub-divider">⬇ Substitutes <span id="subCountBadge" class="badge yellow">${subs.length} / 2</span></div></li>`;
-
-  if (subs.length === 0) {
-    html += '<li class="empty-state" style="padding:16px"><div style="font-size:13px;color:var(--text-muted)">No substitutes added yet. Add up to 2 subs below.</div></li>';
-  } else {
-    html += subs.map((p, i) => `
-      <li class="player-item sub-item">
-        <span class="player-num">S${i+1}</span>
-        <span class="player-name">${p}<span class="sub-tag">SUB</span></span>
-        <span class="player-status">Rotates in when needed</span>
-        <button class="btn btn-danger" onclick="removeSub(${i})">✕ Remove</button>
-      </li>
-    `).join('');
-  }
-
-  ul.innerHTML = html;
-}
-
-// ===== SCHEDULE GENERATION =====
+// ===== COURT PICKER SYNC =====
 function getSelectedCourts() {
   return [
     parseInt(document.getElementById('courtPick1').value),
@@ -1346,20 +1272,171 @@ function validateCourtPicks() {
   conflictEl.classList.toggle('visible', hasDupe);
   if (!hasDupe) {
     infoEl.textContent = `Courts ${picks.join(', ')} selected · 3 courts · up to 12 players active per round`;
+    // Sync to Firebase (but not if we're reacting to a Firebase update)
+    if (!_suppressCourtPickWrite) {
+      set(courtPicksRef, { c1: picks[0], c2: picks[1], c3: picks[2] });
+    }
   }
   return !hasDupe;
 }
 
+// ===== SELF-REMOVAL =====
+let withdrawTarget = null;
+
+function lookupWithdraw() {
+  const input = document.getElementById('withdrawInput');
+  const name  = input.value.trim();
+  const confirmEl = document.getElementById('withdrawConfirm');
+  if (!name) return showToast('Please enter your name.', true);
+  const pi = players.findIndex(p => p.toLowerCase() === name.toLowerCase());
+  const si = subs.findIndex(p => p.toLowerCase() === name.toLowerCase());
+  if (pi === -1 && si === -1) {
+    confirmEl.classList.remove('visible');
+    withdrawTarget = null;
+    return showToast('Name not found on the signup list.', true);
+  }
+  withdrawTarget = pi !== -1
+    ? { type:'player', index:pi, name:players[pi] }
+    : { type:'sub', index:si, name:subs[si] };
+  document.getElementById('withdrawNameDisplay').textContent = withdrawTarget.name;
+  confirmEl.classList.add('visible');
+}
+
+function confirmWithdraw() {
+  if (!withdrawTarget) return;
+  const name = withdrawTarget.name;
+  if (withdrawTarget.type === 'player') players.splice(withdrawTarget.index, 1);
+  else subs.splice(withdrawTarget.index, 1);
+  // Clear schedule since roster changed
+  set(playersRef, players.length ? players : null);
+  set(subsRef, subs.length ? subs : null);
+  set(roundsRef, null);
+  set(scoresRef, null);
+  set(completedRef, null);
+  withdrawTarget = null;
+  document.getElementById('withdrawInput').value = '';
+  document.getElementById('withdrawConfirm').classList.remove('visible');
+  showToast('👋 ' + name + ' has been removed from the list.');
+}
+
+function cancelWithdraw() {
+  withdrawTarget = null;
+  document.getElementById('withdrawInput').value = '';
+  document.getElementById('withdrawConfirm').classList.remove('visible');
+}
+
+// ===== LIVE SIGNUP BOARD =====
+function renderLiveBoard() {
+  const grid  = document.getElementById('liveNamesGrid');
+  const count = document.getElementById('liveBoardCount');
+  const total = players.length + subs.length;
+  if (total === 0) {
+    grid.innerHTML = '<div class="live-empty-msg">⏳ Waiting for players to sign up...</div>';
+    count.textContent = '0 of 12 spots filled';
+    return;
+  }
+  const spotsLeft = 12 - players.length;
+  count.textContent = `${players.length} of 12 spots filled${subs.length > 0 ? ' · ' + subs.length + ' sub' + (subs.length > 1 ? 's' : '') : ''}${spotsLeft > 0 ? ' · ' + spotsLeft + ' open' : ' · Full!'}`;
+  let html = players.map(p => `
+    <div class="live-name-card">
+      <div class="live-name-avatar">${p.charAt(0).toUpperCase()}</div>
+      <span class="live-name-text">${p}</span>
+    </div>`).join('');
+  if (subs.length > 0) {
+    html += subs.map(p => `
+      <div class="live-name-card is-sub">
+        <div class="live-name-avatar">${p.charAt(0).toUpperCase()}</div>
+        <span class="live-name-text">${p} <span style="font-size:11px;opacity:0.7">(sub)</span></span>
+      </div>`).join('');
+  }
+  grid.innerHTML = html;
+}
+
+// ===== PLAYER MANAGEMENT =====
+function addPlayer() {
+  const input = document.getElementById('playerNameInput');
+  const name  = input.value.trim();
+  if (!name) return showToast('Please enter a name.', true);
+  if (players.length >= 12) return showToast('Maximum 12 players allowed.', true);
+  if ([...players, ...subs].some(p => p.toLowerCase() === name.toLowerCase()))
+    return showToast('Name already registered.', true);
+  const updated = [...players, name];
+  set(playersRef, updated);
+  input.value = '';
+  showToast('✅ ' + name + ' added!');
+}
+
+function addSub() {
+  const input = document.getElementById('subNameInput');
+  const name  = input.value.trim();
+  if (!name) return showToast('Please enter a name.', true);
+  if (subs.length >= 2) return showToast('Maximum 2 substitutes allowed.', true);
+  if ([...players, ...subs].some(p => p.toLowerCase() === name.toLowerCase()))
+    return showToast('Name already registered.', true);
+  const updated = [...subs, name];
+  set(subsRef, updated);
+  input.value = '';
+  showToast('✅ ' + name + ' added as substitute!');
+}
+
+function removePlayer(idx) {
+  const name = players[idx];
+  const updated = players.filter((_, i) => i !== idx);
+  set(playersRef, updated.length ? updated : null);
+  set(roundsRef, null);
+  set(scoresRef, null);
+  set(completedRef, null);
+  showToast(name + ' removed.');
+}
+
+function removeSub(idx) {
+  const name = subs[idx];
+  const updated = subs.filter((_, i) => i !== idx);
+  set(subsRef, updated.length ? updated : null);
+  set(roundsRef, null);
+  set(scoresRef, null);
+  set(completedRef, null);
+  showToast(name + ' removed from substitutes.');
+}
+
+function renderPlayerList() {
+  const ul = document.getElementById('playerList');
+  let html = '';
+  if (players.length === 0) {
+    html += '<li class="empty-state"><div class="icon">👥</div>No players yet. Add up to 12 players above.</li>';
+  } else {
+    html += players.map((p, i) => `
+      <li class="player-item">
+        <span class="player-num">${i+1}</span>
+        <span class="player-name">${p}</span>
+        <span class="player-status">${rounds.length > 0 ? 'In schedule' : 'Registered'}</span>
+        <button class="btn btn-danger" onclick="removePlayer(${i})">✕ Remove</button>
+      </li>`).join('');
+  }
+  html += `<li style="list-style:none"><div class="sub-divider">⬇ Substitutes <span id="subCountBadge" class="badge yellow">${subs.length} / 2</span></div></li>`;
+  if (subs.length === 0) {
+    html += '<li class="empty-state" style="padding:16px"><div style="font-size:13px;color:var(--text-muted)">No substitutes added yet. Add up to 2 subs below.</div></li>';
+  } else {
+    html += subs.map((p, i) => `
+      <li class="player-item sub-item">
+        <span class="player-num">S${i+1}</span>
+        <span class="player-name">${p}<span class="sub-tag">SUB</span></span>
+        <span class="player-status">Rotates in when needed</span>
+        <button class="btn btn-danger" onclick="removeSub(${i})">✕ Remove</button>
+      </li>`).join('');
+  }
+  ul.innerHTML = html;
+}
+
+// ===== SCHEDULE GENERATION =====
 function generateSchedule() {
   if (players.length < 4) return showToast('Need at least 4 players to generate a schedule.', true);
   if (!validateCourtPicks()) return showToast('Please select 3 different court numbers.', true);
 
   const pickedCourtNums = getSelectedCourts();
-  // Pre-fill courtNames with the selected court numbers
-  pickedCourtNums.forEach((num, i) => { courtNames[i] = `Court ${num}`; });
+  const newCourtNames = {};
+  pickedCourtNums.forEach((num, i) => { newCourtNames[i] = `Court ${num}`; });
 
-  rounds = [];
-  completedRounds = new Set();
   const n = players.length;
   const numCourts = 3;
   const activePlayers = numCourts * 4;
@@ -1367,11 +1444,12 @@ function generateSchedule() {
 
   let rotation = [...Array(n).keys()];
   let subRotation = 0;
+  const newRounds = [];
 
   for (let r = 0; r < numRounds; r++) {
     const sittingIndices = rotation.slice(activePlayers);
-    const sittingNames = sittingIndices.map(i => players[i]);
-    const active = rotation.slice(0, activePlayers);
+    const sittingNames   = sittingIndices.map(i => players[i]);
+    const active         = rotation.slice(0, activePlayers);
 
     let subIn = [];
     if (subs.length > 0 && sittingNames.length > 0) {
@@ -1381,77 +1459,69 @@ function generateSchedule() {
       subRotation = (subRotation + subIn.length) % Math.max(subs.length, 1);
     }
 
-    let courts = [];
-    let shuffled = [...active];
-    const half = shuffled.length / 2;
-    let teamAPool = shuffled.slice(0, half);
-    let teamBPool = shuffled.slice(half);
+    const half     = active.length / 2;
+    const teamAPool = active.slice(0, half);
+    const teamBPool = active.slice(half);
+    const courts   = [];
 
     for (let c = 0; c < numCourts; c++) {
-      const teamA = [players[teamAPool[c*2]], players[teamAPool[c*2+1]]];
-      const teamB = [players[teamBPool[c*2]], players[teamBPool[c*2+1]]];
+      const teamA       = [players[teamAPool[c*2]], players[teamAPool[c*2+1]]];
+      const teamB       = [players[teamBPool[c*2]], players[teamBPool[c*2+1]]];
       const serverTeam  = (r + c) % 2 === 0 ? teamA : teamB;
       const receiveTeam = (r + c) % 2 === 0 ? teamB : teamA;
-      courts.push({
-        teamA, teamB,
-        server:          serverTeam[0],
-        serverPartner:   serverTeam[1],
-        receiver:        receiveTeam[0],
-        receiverPartner: receiveTeam[1]
-      });
+      courts.push({ teamA, teamB,
+        server: serverTeam[0], serverPartner: serverTeam[1],
+        receiver: receiveTeam[0], receiverPartner: receiveTeam[1] });
     }
 
-    rounds.push({ courts, sittingOut: sittingNames, subIn });
+    newRounds.push({ courts, sittingOut: sittingNames, subIn });
 
     const last = rotation.pop();
     rotation.splice(1, 0, last);
   }
 
-  const pickedNums = getSelectedCourts();
-  renderSchedule();
-  updateStatus();
-  showTab.call({}, 'schedule');
-  document.querySelectorAll('.tab-btn')[0].classList.add('active');
-  document.querySelectorAll('.tab-btn')[1].classList.remove('active');
-  showToast(`✅ Schedule generated — 8 rounds on Courts ${pickedNums.join(', ')}!`);
+  // Write everything to Firebase at once
+  set(roundsRef, newRounds);
+  set(courtNamesRef, newCourtNames);
+  set(scoresRef, null);
+  set(completedRef, null);
+
+  showToast(`✅ Schedule generated — 8 rounds on Courts ${pickedCourtNums.join(', ')}!`);
+
+  // Switch to schedule tab
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-schedule').classList.add('active');
+  document.querySelector('.tab-btn').classList.add('active');
 }
 
+// ===== RENDER SCHEDULE =====
 function renderSchedule() {
-  const div = document.getElementById('scheduleContent');
+  const div  = document.getElementById('scheduleContent');
   const ctrl = document.getElementById('scheduleControls');
-  if (rounds.length === 0) {
+  if (!rounds || rounds.length === 0) {
     div.innerHTML = '<div class="empty-state" style="padding:60px 0"><div class="icon">📅</div>Sign up players and click "Generate Schedule" to begin.</div>';
     ctrl.style.display = 'none';
     return;
   }
   ctrl.style.display = 'flex';
 
-  const numCourts = rounds[0].courts.length;
-  for (let c = 0; c < numCourts; c++) {
-    if (!courtNames[c]) courtNames[c] = '';
-  }
-
   div.innerHTML = rounds.map((round, ri) => {
     const isDone = completedRounds.has(ri);
 
-    // Build rotation reveal: show which players moved where compared to previous round
     let rotationHTML = '';
     if (isDone && ri + 1 < rounds.length) {
-      const nextRound = rounds[ri + 1];
-      const currentPlayers = round.courts.flatMap(c => [...c.teamA, ...c.teamB]);
-      const nextPlayers    = nextRound.courts.flatMap(c => [...c.teamA, ...c.teamB]);
-
-      // Map player → court this round vs next round
-      const thisCourtMap = {};
+      const nextRound     = rounds[ri + 1];
+      const thisCourtMap  = {};
+      const nextCourtMap  = {};
       round.courts.forEach((c, ci) => { [...c.teamA, ...c.teamB].forEach(p => { thisCourtMap[p] = ci + 1; }); });
-      const nextCourtMap = {};
       nextRound.courts.forEach((c, ci) => { [...c.teamA, ...c.teamB].forEach(p => { nextCourtMap[p] = ci + 1; }); });
 
       const chips = players
         .filter(p => thisCourtMap[p] && nextCourtMap[p])
         .map(p => {
-          const from = thisCourtMap[p];
-          const to   = nextCourtMap[p];
+          const from  = thisCourtMap[p];
+          const to    = nextCourtMap[p];
           const moved = from !== to;
           return `<div class="rotation-chip">
             <span class="role-name">${p}</span>
@@ -1459,7 +1529,7 @@ function renderSchedule() {
           </div>`;
         }).join('');
 
-      const sittingNext = nextRound.sittingOut.length > 0
+      const sittingNext = nextRound.sittingOut && nextRound.sittingOut.length > 0
         ? `<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">⏸ Sitting out next round: ${nextRound.sittingOut.join(', ')}${nextRound.subIn && nextRound.subIn.length > 0 ? ' → Sub in: ' + nextRound.subIn.join(', ') : ''}</div>`
         : '';
 
@@ -1482,15 +1552,11 @@ function renderSchedule() {
           <div class="court-label">
             <span>Court <span class="court-num">${ci+1}</span></span>
             <span>
-              <input
-                class="court-name-input"
-                type="text"
-                maxlength="24"
+              <input class="court-name-input" type="text" maxlength="24"
                 placeholder="e.g. Court A / Gym 1"
                 value="${courtNames[ci] || ''}"
                 oninput="updateCourtName(${ci}, this.value)"
-                title="Click to set a court location name — applies to all rounds"
-              >
+                title="Click to set a court location name — applies to all rounds">
               <span class="edit-hint">✏ editable</span>
             </span>
           </div>
@@ -1507,43 +1573,35 @@ function renderSchedule() {
           </div>
           <div class="roles-display">
             <div class="roles-title">Game Start Roles</div>
-            <div class="role-row">
-              <span class="role-pill server">SERVER</span>
-              <span class="role-name">${court.server}</span>
-            </div>
-            <div class="role-row">
-              <span class="role-pill partner">SERVER'S PARTNER</span>
-              <span class="role-name">${court.serverPartner}</span>
-            </div>
-            <div class="role-row">
-              <span class="role-pill receiver">RECEIVER</span>
-              <span class="role-name">${court.receiver}</span>
-            </div>
-            <div class="role-row">
-              <span class="role-pill rec-partner">RECEIVER'S PARTNER</span>
-              <span class="role-name">${court.receiverPartner}</span>
-            </div>
+            <div class="role-row"><span class="role-pill server">SERVER</span><span class="role-name">${court.server}</span></div>
+            <div class="role-row"><span class="role-pill partner">SERVER'S PARTNER</span><span class="role-name">${court.serverPartner}</span></div>
+            <div class="role-row"><span class="role-pill receiver">RECEIVER</span><span class="role-name">${court.receiver}</span></div>
+            <div class="role-row"><span class="role-pill rec-partner">RECEIVER'S PARTNER</span><span class="role-name">${court.receiverPartner}</span></div>
           </div>
-        </div>
-      `).join('')}
+        </div>`).join('')}
     </div>
-    ${round.sittingOut.length > 0 ? `
+    ${round.sittingOut && round.sittingOut.length > 0 ? `
       <div class="sitting-out">⏸ Sitting out Round ${ri+1}: ${round.sittingOut.join(', ')}${round.subIn && round.subIn.length > 0 ? ` &nbsp;|&nbsp; <span style="color:var(--yellow)">⬆ Sub${round.subIn.length > 1 ? 's' : ''} in: ${round.subIn.join(', ')}</span>` : ''}</div>
     ` : (round.subIn && round.subIn.length > 0 ? `<div class="sitting-out sub-in">⬆ Sub${round.subIn.length > 1 ? 's' : ''} rotating in Round ${ri+1}: ${round.subIn.join(', ')}</div>` : '')}
     <div class="round-complete-bar">
       ${!isDone
         ? `<button class="btn btn-complete" onclick="markRoundComplete(${ri})">✓ Mark Round ${ri+1} Complete & Show Rotation</button>`
-        : `<button class="btn btn-complete done" disabled>✓ Round ${ri+1} Complete</button>`
-      }
+        : `<button class="btn btn-complete done" disabled>✓ Round ${ri+1} Complete</button>`}
     </div>
     ${rotationHTML}
-  `}).join('');
+    `;
+  }).join('');
 }
 
 function updateCourtName(courtIndex, value) {
   courtNames[courtIndex] = value.trim();
-  document.querySelectorAll(`.court-name-input`).forEach((input, idx) => {
-    const ci = idx % rounds[0].courts.length;
+  // Sync to Firebase
+  const updates = {};
+  updates[courtIndex] = value.trim();
+  update(courtNamesRef, updates);
+  // Update all other inputs for this court index without triggering another write
+  document.querySelectorAll('.court-name-input').forEach((input, idx) => {
+    const ci = idx % (rounds[0] ? rounds[0].courts.length : 3);
     if (ci === courtIndex && input !== document.activeElement) {
       input.value = value;
     }
@@ -1551,21 +1609,20 @@ function updateCourtName(courtIndex, value) {
 }
 
 function markRoundComplete(ri) {
-  completedRounds.add(ri);
-  renderSchedule();
-  // Scroll to the rotation reveal for this round
+  const updated = [...completedRounds, ri];
+  set(completedRef, updated);
+  showToast(`✅ Round ${ri + 1} complete! Rotation revealed.`);
   setTimeout(() => {
     const headers = document.querySelectorAll('.round-header');
     if (headers[ri + 1]) headers[ri + 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 100);
-  showToast(`✅ Round ${ri + 1} complete! Rotation revealed.`);
+  }, 300);
 }
 
 // ===== SCORES =====
 function renderScores() {
-  const div = document.getElementById('scoresContent');
+  const div  = document.getElementById('scoresContent');
   const ctrl = document.getElementById('scoreControls');
-  if (rounds.length === 0) {
+  if (!rounds || rounds.length === 0) {
     div.innerHTML = '<div class="empty-state" style="padding:60px 0"><div class="icon">🏆</div>Generate a schedule first, then enter scores here.</div>';
     ctrl.style.display = 'none';
     return;
@@ -1575,7 +1632,7 @@ function renderScores() {
     <div class="card">
       <div class="card-title">Round ${ri+1} Scores</div>
       ${round.courts.map((court, ci) => {
-        const sc = (scores[ri] || {})[ci] || {a:'', b:''};
+        const sc   = (scores[ri] || {})[ci] || {a:'', b:''};
         const aWin = sc.a !== '' && sc.b !== '' && Number(sc.a) > Number(sc.b);
         const bWin = sc.a !== '' && sc.b !== '' && Number(sc.b) > Number(sc.a);
         return `
@@ -1597,8 +1654,7 @@ function renderScores() {
           </div>
         </div>`;
       }).join('')}
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
 function previewWinner(ri, ci) {
@@ -1606,24 +1662,20 @@ function previewWinner(ri, ci) {
   const bEl = document.getElementById(`score-${ri}-${ci}-b`);
   if (!scores[ri]) scores[ri] = {};
   scores[ri][ci] = { a: aEl.value, b: bEl.value };
-  // Re-render just the winner tags without full refresh
   renderScores();
 }
 
 function saveScores() {
-  // Collect all values from inputs
   rounds.forEach((round, ri) => {
     if (!scores[ri]) scores[ri] = {};
     round.courts.forEach((court, ci) => {
       const aEl = document.getElementById(`score-${ri}-${ci}-a`);
       const bEl = document.getElementById(`score-${ri}-${ci}-b`);
-      if (aEl && bEl) {
-        scores[ri][ci] = { a: aEl.value, b: bEl.value };
-      }
+      if (aEl && bEl) scores[ri][ci] = { a: aEl.value, b: bEl.value };
     });
   });
+  set(scoresRef, scores);
   renderStandings();
-  updateStatus();
   showToast('✅ Scores saved! Check Standings tab.');
 }
 
@@ -1634,31 +1686,23 @@ function renderStandings() {
     div.innerHTML = '<div class="empty-state" style="padding:60px 0"><div class="icon">📊</div>Standings will appear after scores are saved.</div>';
     return;
   }
-
-  // Build stats per player
   const stats = {};
-  players.forEach(p => { stats[p] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, gamesPlayed: 0 }; });
+  players.forEach(p => { stats[p] = { wins:0, losses:0, pointsFor:0, pointsAgainst:0, gamesPlayed:0 }; });
 
   rounds.forEach((round, ri) => {
     if (!scores[ri]) return;
     round.courts.forEach((court, ci) => {
       const sc = scores[ri][ci];
       if (!sc || sc.a === '' || sc.b === '') return;
-      const aScore = Number(sc.a);
-      const bScore = Number(sc.b);
-      const aWon = aScore > bScore;
+      const aScore = Number(sc.a), bScore = Number(sc.b), aWon = aScore > bScore;
       court.teamA.forEach(p => {
         if (!stats[p]) return;
-        stats[p].gamesPlayed++;
-        stats[p].pointsFor += aScore;
-        stats[p].pointsAgainst += bScore;
+        stats[p].gamesPlayed++; stats[p].pointsFor += aScore; stats[p].pointsAgainst += bScore;
         if (aWon) stats[p].wins++; else stats[p].losses++;
       });
       court.teamB.forEach(p => {
         if (!stats[p]) return;
-        stats[p].gamesPlayed++;
-        stats[p].pointsFor += bScore;
-        stats[p].pointsAgainst += aScore;
+        stats[p].gamesPlayed++; stats[p].pointsFor += bScore; stats[p].pointsAgainst += aScore;
         if (!aWon) stats[p].wins++; else stats[p].losses++;
       });
     });
@@ -1669,31 +1713,21 @@ function renderStandings() {
     const pctA = stats[a].gamesPlayed ? stats[a].wins / stats[a].gamesPlayed : 0;
     const pctB = stats[b].gamesPlayed ? stats[b].wins / stats[b].gamesPlayed : 0;
     if (pctB !== pctA) return pctB - pctA;
-    const diffA = stats[a].pointsFor - stats[a].pointsAgainst;
-    const diffB = stats[b].pointsFor - stats[b].pointsAgainst;
-    return diffB - diffA;
+    return (stats[b].pointsFor - stats[b].pointsAgainst) - (stats[a].pointsFor - stats[a].pointsAgainst);
   });
 
   div.innerHTML = `
     <div class="card">
       <div class="card-title">Player Standings <span class="badge yellow">Live</span></div>
       <table class="standings-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Player</th>
-            <th class="stat-cell">W</th>
-            <th class="stat-cell">L</th>
-            <th class="stat-cell">Games</th>
-            <th class="stat-cell">Pts For</th>
-            <th class="stat-cell">Pts Against</th>
-            <th class="stat-cell">+/-</th>
-          </tr>
-        </thead>
+        <thead><tr>
+          <th>#</th><th>Player</th>
+          <th class="stat-cell">W</th><th class="stat-cell">L</th><th class="stat-cell">Games</th>
+          <th class="stat-cell">Pts For</th><th class="stat-cell">Pts Against</th><th class="stat-cell">+/-</th>
+        </tr></thead>
         <tbody>
           ${sorted.map((p, i) => {
-            const s = stats[p];
-            const diff = s.pointsFor - s.pointsAgainst;
+            const s = stats[p], diff = s.pointsFor - s.pointsAgainst;
             return `<tr>
               <td class="rank-cell ${i < 3 ? 'top3' : ''}">${i+1}</td>
               <td><strong>${p}</strong></td>
@@ -1711,36 +1745,31 @@ function renderStandings() {
 }
 
 // ===== PRINT =====
-function printSchedule() {
-  window.print();
-}
+function printSchedule() { window.print(); }
 
 // ===== CLEAR ALL =====
 function clearAll() {
   if (players.length === 0 && subs.length === 0) return;
-  if (!confirm('Clear all players, substitutes, and schedule?')) return;
-  players = [];
-  subs = [];
-  rounds = [];
-  courtNames = {};
-  completedRounds = new Set();
-  renderPlayerList(); renderLiveBoard(); renderSchedule(); updateStatus();
+  if (!confirm('Clear all players, substitutes, and schedule for everyone?')) return;
+  set(playersRef, null);
+  set(subsRef, null);
+  set(roundsRef, null);
+  set(scoresRef, null);
+  set(courtNamesRef, null);
+  set(completedRef, null);
   showToast('All cleared.');
 }
 
 // ===== LOCATION & TIME =====
-let locationData = {
-  venue: '', address: '', indoorOutdoor: 'Indoor', notes: '', date: '', start: '', end: '', roundDuration: 15
-};
-
 function saveLocation() {
-  locationData.venue       = document.getElementById('locVenue').value;
-  locationData.address     = document.getElementById('locAddress').value;
-  locationData.notes       = document.getElementById('locNotes').value;
-  locationData.date        = document.getElementById('locDate').value;
-  locationData.start       = document.getElementById('locStart').value;
-  locationData.end         = document.getElementById('locEnd').value;
+  locationData.venue         = document.getElementById('locVenue').value;
+  locationData.address       = document.getElementById('locAddress').value;
+  locationData.notes         = document.getElementById('locNotes').value;
+  locationData.date          = document.getElementById('locDate').value;
+  locationData.start         = document.getElementById('locStart').value;
+  locationData.end           = document.getElementById('locEnd').value;
   locationData.roundDuration = parseInt(document.getElementById('locRoundDuration').value) || 15;
+  set(locationRef, locationData);
   calcTimes();
   renderSummary();
 }
@@ -1749,6 +1778,7 @@ function setIndoorOutdoor(val) {
   locationData.indoorOutdoor = val;
   document.getElementById('toggleIndoor').classList.toggle('active', val === 'Indoor');
   document.getElementById('toggleOutdoor').classList.toggle('active', val === 'Outdoor');
+  set(locationRef, locationData);
   renderSummary();
 }
 
@@ -1756,29 +1786,17 @@ function calcTimes() {
   const timeline = document.getElementById('roundTimeline');
   const startVal = document.getElementById('locStart').value;
   const duration = parseInt(document.getElementById('locRoundDuration').value) || 15;
-  const numRounds = 8;
-
   if (!startVal) {
     timeline.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0">Enter a start time to see the round-by-round schedule.</div>';
     return;
   }
-
   const [sh, sm] = startVal.split(':').map(Number);
   let rows = '';
-  for (let r = 0; r < numRounds; r++) {
+  for (let r = 0; r < 8; r++) {
     const totalMins = sh * 60 + sm + r * duration;
     const endMins   = totalMins + duration;
-    const fmt = (m) => {
-      const h = Math.floor(m / 60) % 24;
-      const min = m % 60;
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      const h12 = h % 12 || 12;
-      return `${h12}:${String(min).padStart(2,'0')} ${ampm}`;
-    };
-    rows += `<div class="timeline-row">
-      <span class="timeline-round">Round ${r+1}</span>
-      <span class="timeline-time">${fmt(totalMins)} — ${fmt(endMins)}</span>
-    </div>`;
+    const fmt = m => { const h = Math.floor(m/60)%24, min = m%60, ampm = h>=12?'PM':'AM', h12 = h%12||12; return `${h12}:${String(min).padStart(2,'0')} ${ampm}`; };
+    rows += `<div class="timeline-row"><span class="timeline-round">Round ${r+1}</span><span class="timeline-time">${fmt(totalMins)} — ${fmt(endMins)}</span></div>`;
   }
   timeline.innerHTML = rows;
 }
@@ -1790,30 +1808,42 @@ function renderSummary() {
   const hasAny = d.venue || d.address || d.date || d.start;
   card.style.display = hasAny ? 'block' : 'none';
   if (!hasAny) return;
-
   const fmtDate = d.date ? new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' }) : '—';
-  const fmtTime = (t) => {
-    if (!t) return '—';
-    const [h, m] = t.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${ampm}`;
-  };
-
+  const fmtTime = t => { if (!t) return '—'; const [h,m] = t.split(':').map(Number); return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`; };
   box.innerHTML = `
     ${d.venue    ? `<div>🏟 <strong>Venue:</strong> ${d.venue}</div>` : ''}
     ${d.address  ? `<div>📍 <strong>Address:</strong> ${d.address}</div>` : ''}
-    ${d.indoorOutdoor ? `<div>${d.indoorOutdoor === 'Indoor' ? '🏢' : '☀️'} <strong>Type:</strong> ${d.indoorOutdoor}</div>` : ''}
+    ${d.indoorOutdoor ? `<div>${d.indoorOutdoor==='Indoor'?'🏢':'☀️'} <strong>Type:</strong> ${d.indoorOutdoor}</div>` : ''}
     ${d.date     ? `<div>📅 <strong>Date:</strong> ${fmtDate}</div>` : ''}
-    ${d.start    ? `<div>🕐 <strong>Start:</strong> ${fmtTime(d.start)}${d.end ? ' &nbsp;→&nbsp; <strong>End:</strong> ' + fmtTime(d.end) : ''}</div>` : ''}
+    ${d.start    ? `<div>🕐 <strong>Start:</strong> ${fmtTime(d.start)}${d.end?' &nbsp;→&nbsp; <strong>End:</strong> '+fmtTime(d.end):''}</div>` : ''}
     ${d.roundDuration ? `<div>⏱ <strong>Round Duration:</strong> ${d.roundDuration} minutes</div>` : ''}
-    ${d.notes    ? `<div>📝 <strong>Notes:</strong> ${d.notes}</div>` : ''}
-  `;
+    ${d.notes    ? `<div>📝 <strong>Notes:</strong> ${d.notes}</div>` : ''}`;
 }
 
-// Init
+// ===== EXPOSE FUNCTIONS GLOBALLY (needed because onclick= in HTML can't see module scope) =====
+window.showTab           = showTab;
+window.addPlayer         = addPlayer;
+window.addSub            = addSub;
+window.removePlayer      = removePlayer;
+window.removeSub         = removeSub;
+window.generateSchedule  = generateSchedule;
+window.validateCourtPicks = validateCourtPicks;
+window.updateCourtName   = updateCourtName;
+window.markRoundComplete = markRoundComplete;
+window.previewWinner     = previewWinner;
+window.saveScores        = saveScores;
+window.printSchedule     = printSchedule;
+window.clearAll          = clearAll;
+window.saveLocation      = saveLocation;
+window.setIndoorOutdoor  = setIndoorOutdoor;
+window.lookupWithdraw    = lookupWithdraw;
+window.confirmWithdraw   = confirmWithdraw;
+window.cancelWithdraw    = cancelWithdraw;
+
+// ===== INIT =====
 updateStatus();
 renderLiveBoard();
-validateCourtPicks();
+renderSchedule();
 </script>
 </body>
 </html>
