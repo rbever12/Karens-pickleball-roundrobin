@@ -866,9 +866,134 @@
   .btn-confirm-remove:hover { background: #c0553a; }
   .btn-cancel-remove { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 14px; padding: 9px 16px; }
   .btn-cancel-remove:hover { color: var(--text); border-color: var(--text-muted); }
+  /* ===== LOCK SCREEN ===== */
+  .lock-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .lock-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px 36px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .lock-icon { font-size: 48px; margin-bottom: 16px; }
+  .lock-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 2px;
+    color: var(--green-bright);
+    margin-bottom: 6px;
+    -webkit-text-stroke: 1.5px black;
+  }
+  .lock-subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 28px;
+  }
+  .lock-input {
+    width: 100%;
+    padding: 14px 18px;
+    background: var(--court-bg);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 18px;
+    text-align: center;
+    letter-spacing: 3px;
+    outline: none;
+    margin-bottom: 14px;
+    transition: border-color 0.2s;
+  }
+  .lock-input:focus { border-color: var(--green-light); }
+  .lock-input.shake {
+    animation: shake 0.4s ease;
+    border-color: var(--red);
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%       { transform: translateX(-8px); }
+    40%       { transform: translateX(8px); }
+    60%       { transform: translateX(-6px); }
+    80%       { transform: translateX(6px); }
+  }
+  .lock-error {
+    font-size: 13px;
+    color: var(--red);
+    font-weight: 700;
+    min-height: 18px;
+    margin-bottom: 10px;
+  }
+  .lock-screen.unlocked {
+    animation: fadeout 0.4s ease forwards;
+    pointer-events: none;
+  }
+  @keyframes fadeout {
+    to { opacity: 0; }
+  }
 </style>
 </head>
 <body>
+
+<!-- ===== LOCK SCREEN ===== -->
+<div class="lock-screen" id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-icon">🏓</div>
+    <div class="lock-title">MIXED DOUBLES</div>
+    <div class="lock-subtitle">Enter the session password to continue</div>
+    <input
+      class="lock-input"
+      id="lockInput"
+      type="password"
+      placeholder="••••••••"
+      maxlength="30"
+      onkeydown="if(event.key==='Enter') checkPassword()"
+      autocomplete="off"
+    >
+    <div class="lock-error" id="lockError"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:16px;padding:14px" onclick="checkPassword()">
+      🔓 Enter
+    </button>
+  </div>
+</div>
+
+<!-- Lock screen runs as a plain script so onclick= can find it immediately -->
+<script>
+const SESSION_PASSWORD = 'curly';
+
+function checkPassword() {
+  const input      = document.getElementById('lockInput');
+  const errorEl    = document.getElementById('lockError');
+  const lockScreen = document.getElementById('lockScreen');
+
+  if (input.value.trim().toLowerCase() === SESSION_PASSWORD.toLowerCase()) {
+    errorEl.textContent = '';
+    lockScreen.classList.add('unlocked');
+    setTimeout(() => lockScreen.style.display = 'none', 420);
+    input.value = '';
+  } else {
+    errorEl.textContent = 'Incorrect password. Try again.';
+    input.classList.add('shake');
+    input.value = '';
+    setTimeout(() => input.classList.remove('shake'), 450);
+    input.focus();
+  }
+}
+</script>
+
+</div>
+
 <div class="app">
 
   <header>
