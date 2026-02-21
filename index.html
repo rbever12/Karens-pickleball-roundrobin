@@ -1576,31 +1576,55 @@ function generateSchedule() {
 
   const numRounds  = 8;
 
-  // Pool = all real participants (players + subs), padded to 12 with EMPTY at the end.
-  // EMPTY slots are FIXED at the tail — only the real names rotate among themselves.
-  // This guarantees:
-  //   • every real player/sub moves courts each round
-  //   • blanks always appear on the last court(s), never interrupting filled courts
-  const realPool = [...players, ...subs];          // all real participants
-  const numReal  = realPool.length;
-  const numEmpty = totalSlots - numReal;
+  // Real players always fill their slots first — never displaced by subs.
+  // Subs fill only the genuinely open slots (totalSlots - numPlayers).
+  // If there are more subs than open slots, subs alternate sitting out.
+  //
+  // Strategy: build a rotating pool of (players + active subs this round) padded to 12.
+  // Real players rotate among themselves. For each round, decide which sub(s) play
+  // based on how many open slots exist, then build the 12-slot list as:
+  //   [rotated real players..., active subs this round..., EMPTY...]
 
-  // We rotate only the real participants. EMPTY pads the tail each round.
-  let realRotation = [...realPool];                // e.g. 9 names if 9 real participants
-  const newRounds  = [];
+  const numPlayers  = players.length;
+  const openSlots   = totalSlots - numPlayers;          // slots available for subs
+  const subsPerRound = Math.min(subs.length, openSlots); // subs that play each round
+
+  // Real player rotation (classic round-robin among players only)
+  let realRotation = [...players];
+  // Sub rotation offset — when 2 subs compete for 1 slot, they alternate
+  let subOffset = 0;
+
+  const newRounds = [];
 
   for (let r = 0; r < numRounds; r++) {
-    // Build the 12-slot assignment for this round: rotated real names + fixed EMPTY tail
-    const slotted = [...realRotation, ...Array(numEmpty).fill(EMPTY)];
+    // Which subs play this round (rotate which sits out if more subs than slots)
+    const activeSubs = [];
+    for (let i = 0; i < subsPerRound; i++) {
+      activeSubs.push(subs[(subOffset + i) % subs.length]);
+    }
+    if (subs.length > subsPerRound) {
+      subOffset = (subOffset + subsPerRound) % subs.length;
+    }
+
+    // Build 12-slot list with subs inserted at a rotating position so they
+    // change courts each round. We interleave subs into the real rotation
+    // at position (r * subsPerRound) mod numPlayers, then pad blanks at the end.
+    //
+    // Approach: insert active subs right after the first (insertAt) real players,
+    // then fill remaining blanks. This gives subs a new court context each round.
+    const insertAt  = numPlayers > 0 ? (r * Math.max(1, subsPerRound)) % numPlayers : 0;
+    const before    = realRotation.slice(0, insertAt);
+    const after     = realRotation.slice(insertAt);
+    const blanks    = Array(openSlots - subsPerRound).fill(EMPTY);
+    const slotted   = [...before, ...activeSubs, ...after, ...blanks];
 
     const sittingNames = [];
     const subIn        = [];
 
-    // Assign courts sequentially from the slotted list:
-    // slots 0-3 → Court 1, 4-7 → Court 2, 8-11 → Court 3
+    // Assign courts: slots 0-3 → C1, 4-7 → C2, 8-11 → C3
     const courts = [];
     for (let c = 0; c < numCourts; c++) {
-      const base = c * 4;
+      const base  = c * 4;
       const teamA = [slotted[base],     slotted[base + 1]];
       const teamB = [slotted[base + 2], slotted[base + 3]];
 
@@ -1618,9 +1642,8 @@ function generateSchedule() {
 
     newRounds.push({ courts, sittingOut: sittingNames, subIn });
 
-    // Rotate only the real participants: move last real name to index 1
-    // (classic round-robin: anchor slot 0, rotate the rest)
-    if (numReal > 1) {
+    // Rotate real players only: anchor index 0, move last to index 1
+    if (numPlayers > 1) {
       const last = realRotation.pop();
       realRotation.splice(1, 0, last);
     }
