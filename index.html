@@ -1567,54 +1567,48 @@ function generateSchedule() {
   if (players.length < 4) return showToast('Need at least 4 players to generate a schedule.', true);
   if (!validateCourtPicks()) return showToast('Please select 3 different court numbers.', true);
 
-  const EMPTY = '__EMPTY__';   // sentinel — survives Firebase, never a real player name
-
+  const EMPTY = '__EMPTY__';
   const numCourts       = 3;
   const totalSlots      = 12;
   const pickedCourtNums = getSelectedCourts();
   const newCourtNames   = {};
   pickedCourtNums.forEach((num, i) => { newCourtNames[i] = `Court ${num}`; });
 
-  const numRounds = 8;
+  const numRounds  = 8;
 
-  // Build the rotating pool: real players first, then subs, then EMPTY to pad to 12
-  // Subs are included in the rotation so they move between courts each round
-  const poolPlayers = [...players, ...subs];
-  const paddedPlayers = [...poolPlayers];
-  while (paddedPlayers.length < totalSlots) paddedPlayers.push(EMPTY);
+  // Pool = all real participants (players + subs), padded to 12 with EMPTY at the end.
+  // EMPTY slots are FIXED at the tail — only the real names rotate among themselves.
+  // This guarantees:
+  //   • every real player/sub moves courts each round
+  //   • blanks always appear on the last court(s), never interrupting filled courts
+  const realPool = [...players, ...subs];          // all real participants
+  const numReal  = realPool.length;
+  const numEmpty = totalSlots - numReal;
 
-  // Rotate the full 12-slot list each round
-  let rotation    = [...paddedPlayers];
-  const newRounds = [];
+  // We rotate only the real participants. EMPTY pads the tail each round.
+  let realRotation = [...realPool];                // e.g. 9 names if 9 real participants
+  const newRounds  = [];
 
   for (let r = 0; r < numRounds; r++) {
-    const active = rotation.slice(0, totalSlots);  // all 12 slots
+    // Build the 12-slot assignment for this round: rotated real names + fixed EMPTY tail
+    const slotted = [...realRotation, ...Array(numEmpty).fill(EMPTY)];
 
     const sittingNames = [];
-    const subIn = [];
+    const subIn        = [];
 
-    // Sort: real players + subs to front (preserving rotation order), EMPTY last
-    // This ensures courts fill from Court 1 → 2 → 3 with no gaps
-    const filledSlots = active.filter(p => p !== EMPTY);
-    const emptySlots  = active.filter(p => p === EMPTY);
-    const sorted      = [...filledSlots, ...emptySlots];
-
-    // Now assign courts sequentially: slots 0-3 → Court 1, 4-7 → Court 2, 8-11 → Court 3
+    // Assign courts sequentially from the slotted list:
+    // slots 0-3 → Court 1, 4-7 → Court 2, 8-11 → Court 3
     const courts = [];
     for (let c = 0; c < numCourts; c++) {
       const base = c * 4;
-      const p0 = sorted[base],     p1 = sorted[base + 1];
-      const p2 = sorted[base + 2], p3 = sorted[base + 3];
-
-      const teamA = [p0, p1];
-      const teamB = [p2, p3];
+      const teamA = [slotted[base],     slotted[base + 1]];
+      const teamB = [slotted[base + 2], slotted[base + 3]];
 
       const serverTeam  = (r + c) % 2 === 0 ? teamA : teamB;
       const receiveTeam = (r + c) % 2 === 0 ? teamB : teamA;
 
       courts.push({
-        teamA,
-        teamB,
+        teamA, teamB,
         server:          serverTeam[0],
         serverPartner:   serverTeam[1],
         receiver:        receiveTeam[0],
@@ -1624,9 +1618,12 @@ function generateSchedule() {
 
     newRounds.push({ courts, sittingOut: sittingNames, subIn });
 
-    // Standard round-robin rotation: move last element to index 1
-    const last = rotation.pop();
-    rotation.splice(1, 0, last);
+    // Rotate only the real participants: move last real name to index 1
+    // (classic round-robin: anchor slot 0, rotate the rest)
+    if (numReal > 1) {
+      const last = realRotation.pop();
+      realRotation.splice(1, 0, last);
+    }
   }
 
   set(roundsRef, newRounds);
