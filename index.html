@@ -245,6 +245,12 @@
     font-size: 16px;
   }
   select.court-picker.conflict { border-color: var(--red); color: var(--red); }
+  .blank-slot {
+    color: var(--text-muted);
+    font-style: italic;
+    opacity: 0.5;
+    letter-spacing: 2px;
+  }
   .court-select-info {
     font-size: 12px;
     color: var(--text-muted);
@@ -933,6 +939,7 @@
       <span class="court-select-label">🏟 Select Court Numbers for this Session</span>
       <div class="court-pickers">
         <div class="court-picker-wrap" id="courtPickerWrap1">
+          <span class="court-picker-label">Court 1</span>
           <select class="court-picker" id="courtPick1" onchange="validateCourtPicks()">
             <option value="1" selected>1</option>
             <option value="2">2</option>
@@ -1251,46 +1258,34 @@ function updateStatus() {
 }
 
 // ===== COURT PICKER SYNC =====
-function getNumCourtsNeeded() {
-  return Math.min(3, Math.floor(players.length / 4));
-}
-
 function getSelectedCourts() {
-  const n = getNumCourtsNeeded();
-  const all = [
+  return [
     parseInt(document.getElementById('courtPick1').value),
     parseInt(document.getElementById('courtPick2').value),
     parseInt(document.getElementById('courtPick3').value),
   ];
-  return all.slice(0, n);
 }
 
 function validateCourtPicks() {
-  const n     = getNumCourtsNeeded();
-  const picks = getSelectedCourts(); // only n picks
-  const unique = new Set(picks);
-  const hasDupe = unique.size < picks.length;
+  const picks     = getSelectedCourts();
+  const unique    = new Set(picks);
+  const hasDupe   = unique.size < picks.length;
   const infoEl    = document.getElementById('courtSelectInfo');
   const conflictEl = document.getElementById('courtConflictMsg');
 
-  // Show/hide court pickers based on how many courts are needed
-  document.getElementById('courtPickerWrap1').style.display = n >= 1 ? '' : 'none';
-  document.getElementById('courtPickerWrap2').style.display = n >= 2 ? '' : 'none';
-  document.getElementById('courtPickerWrap3').style.display = n >= 3 ? '' : 'none';
+  // Always show all 3 court pickers
+  document.getElementById('courtPickerWrap1').style.display = '';
+  document.getElementById('courtPickerWrap2').style.display = '';
+  document.getElementById('courtPickerWrap3').style.display = '';
 
   document.querySelectorAll('.court-picker').forEach((sel, i) => {
-    sel.classList.toggle('conflict', hasDupe && i < n && picks.filter(p => p === picks[i]).length > 1);
+    sel.classList.toggle('conflict', hasDupe && picks.filter(p => p === picks[i]).length > 1);
   });
   conflictEl.classList.toggle('visible', hasDupe);
   if (!hasDupe) {
-    const activePicks = [
-      parseInt(document.getElementById('courtPick1').value),
-      parseInt(document.getElementById('courtPick2').value),
-      parseInt(document.getElementById('courtPick3').value),
-    ];
-    infoEl.textContent = `Courts ${picks.join(', ')} selected · ${n} court${n > 1 ? 's' : ''} · up to ${n * 4} players active per round`;
+    infoEl.textContent = `Courts ${picks.join(', ')} selected · 3 courts · up to 12 players active per round`;
     if (!_suppressCourtPickWrite) {
-      set(courtPicksRef, { c1: activePicks[0], c2: activePicks[1], c3: activePicks[2] });
+      set(courtPicksRef, { c1: picks[0], c2: picks[1], c3: picks[2] });
     }
   }
   return !hasDupe;
@@ -1447,50 +1442,62 @@ function renderPlayerList() {
 // ===== SCHEDULE GENERATION =====
 function generateSchedule() {
   if (players.length < 4) return showToast('Need at least 4 players to generate a schedule.', true);
-  if (!validateCourtPicks()) return showToast('Please select different court numbers (no duplicates).', true);
+  if (!validateCourtPicks()) return showToast('Please select 3 different court numbers.', true);
 
-  const numCourts      = getNumCourtsNeeded();          // 1, 2, or 3 based on player count
-  const pickedCourtNums = getSelectedCourts();           // only numCourts values
-  const newCourtNames  = {};
+  const EMPTY = '__EMPTY__';   // sentinel — survives Firebase, never a real player name
+
+  const numCourts       = 3;
+  const totalSlots      = 12;
+  const pickedCourtNums = getSelectedCourts();
+  const newCourtNames   = {};
   pickedCourtNums.forEach((num, i) => { newCourtNames[i] = `Court ${num}`; });
 
-  const n             = players.length;
-  const activePlayers = numCourts * 4;                  // max players on courts this session
-  const numRounds     = 8;
+  const numRounds = 8;
 
-  let rotation    = [...Array(n).keys()];
-  let subRotation = 0;
+  // Pad player list to exactly 12 slots with EMPTY sentinel
+  const paddedPlayers = [...players];
+  while (paddedPlayers.length < totalSlots) paddedPlayers.push(EMPTY);
+
+  // Rotate the full 12-slot list each round (real names + EMPTY sentinels)
+  let rotation    = [...paddedPlayers];
   const newRounds = [];
 
   for (let r = 0; r < numRounds; r++) {
-    const sittingIndices = rotation.slice(activePlayers);
-    const sittingNames   = sittingIndices.map(i => players[i]);
-    const active         = rotation.slice(0, activePlayers);
+    const active = rotation.slice(0, totalSlots);  // all 12 slots
 
-    let subIn = [];
-    if (subs.length > 0 && sittingNames.length > 0) {
-      for (let s = 0; s < Math.min(subs.length, sittingNames.length); s++) {
-        subIn.push(subs[(subRotation + s) % subs.length]);
-      }
-      subRotation = (subRotation + subIn.length) % Math.max(subs.length, 1);
+    // No one sits out in the 12-slot model — subs fill empty slots directly above
+    const sittingNames = [];
+    const subIn = [];
+
+    // Sort real players to front, then fill empty slots with subs (1 slot each), then blanks last
+    const realPlayers = active.filter(p => p !== EMPTY);
+    const emptyCount  = active.filter(p => p === EMPTY).length;
+
+    // Each sub fills exactly 1 empty slot
+    const subFill = [];
+    for (let i = 0; i < emptyCount; i++) {
+      if (i < subs.length) subFill.push(subs[i]);
+      else subFill.push(EMPTY);
     }
 
-    const half      = active.length / 2;
-    const teamAPool = active.slice(0, half);
-    const teamBPool = active.slice(half);
-    const courts    = [];
+    const sorted = [...realPlayers, ...subFill];  // real players + subs (1 each) + remaining blanks
 
+    // Now assign courts sequentially: slots 0-3 → Court 1, 4-7 → Court 2, 8-11 → Court 3
+    const courts = [];
     for (let c = 0; c < numCourts; c++) {
-      const a0 = teamAPool[c * 2],      a1 = teamAPool[c * 2 + 1];
-      const b0 = teamBPool[c * 2],      b1 = teamBPool[c * 2 + 1];
-      const teamA       = [players[a0] || null, players[a1] || null].filter(Boolean);
-      const teamB       = [players[b0] || null, players[b1] || null].filter(Boolean);
-      // Need at least 2 players per team to form a court
-      if (teamA.length < 2 || teamB.length < 2) continue;
+      const base = c * 4;
+      const p0 = sorted[base],     p1 = sorted[base + 1];
+      const p2 = sorted[base + 2], p3 = sorted[base + 3];
+
+      const teamA = [p0, p1];
+      const teamB = [p2, p3];
+
       const serverTeam  = (r + c) % 2 === 0 ? teamA : teamB;
       const receiveTeam = (r + c) % 2 === 0 ? teamB : teamA;
+
       courts.push({
-        teamA, teamB,
+        teamA,
+        teamB,
         server:          serverTeam[0],
         serverPartner:   serverTeam[1],
         receiver:        receiveTeam[0],
@@ -1500,23 +1507,28 @@ function generateSchedule() {
 
     newRounds.push({ courts, sittingOut: sittingNames, subIn });
 
+    // Standard round-robin rotation: move last element to index 1
     const last = rotation.pop();
     rotation.splice(1, 0, last);
   }
 
-  // Write everything to Firebase at once
   set(roundsRef, newRounds);
   set(courtNamesRef, newCourtNames);
   set(scoresRef, null);
   set(completedRef, null);
 
-  showToast(`✅ Schedule generated — 8 rounds on ${numCourts} court${numCourts > 1 ? 's' : ''}!`);
+  showToast(`✅ Schedule generated — 8 rounds on Courts ${pickedCourtNums.join(', ')}!`);
 
-  // Switch to schedule tab
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-schedule').classList.add('active');
   document.querySelector('.tab-btn').classList.add('active');
+}
+
+// Format player name — show styled blank for empty/missing slots
+function fmtPlayer(name) {
+  if (!name || name === '' || name === '__EMPTY__') return '<span class="blank-slot">——</span>';
+  return name;
 }
 
 // ===== RENDER SCHEDULE =====
@@ -1574,7 +1586,7 @@ function renderSchedule() {
       ${round.courts.map((court, ci) => `
         <div class="court-card">
           <div class="court-label">
-            <span>Court <span class="court-num">${ci+1}</span></span>
+            <span>Court <span class="court-num">${courtNames[ci] ? courtNames[ci].replace('Court ', '') : ci+1}</span></span>
             <span>
               <input class="court-name-input" type="text" maxlength="24"
                 placeholder="e.g. Court A / Gym 1"
@@ -1587,20 +1599,20 @@ function renderSchedule() {
           <div class="teams-display">
             <div class="team team-a">
               <div class="team-color"></div>
-              <div class="team-players">${court.teamA.join(' & ')}</div>
+              <div class="team-players">${court.teamA.map(fmtPlayer).join(' & ')}</div>
             </div>
             <div class="vs-divider">— VS —</div>
             <div class="team team-b">
               <div class="team-color"></div>
-              <div class="team-players">${court.teamB.join(' & ')}</div>
+              <div class="team-players">${court.teamB.map(fmtPlayer).join(' & ')}</div>
             </div>
           </div>
           <div class="roles-display">
             <div class="roles-title">Game Start Roles</div>
-            <div class="role-row"><span class="role-pill server">SERVER</span><span class="role-name">${court.server}</span></div>
-            <div class="role-row"><span class="role-pill partner">SERVER'S PARTNER</span><span class="role-name">${court.serverPartner}</span></div>
-            <div class="role-row"><span class="role-pill receiver">RECEIVER</span><span class="role-name">${court.receiver}</span></div>
-            <div class="role-row"><span class="role-pill rec-partner">RECEIVER'S PARTNER</span><span class="role-name">${court.receiverPartner}</span></div>
+            <div class="role-row"><span class="role-pill server">SERVER</span><span class="role-name">${fmtPlayer(court.server)}</span></div>
+            <div class="role-row"><span class="role-pill partner">SERVER'S PARTNER</span><span class="role-name">${fmtPlayer(court.serverPartner)}</span></div>
+            <div class="role-row"><span class="role-pill receiver">RECEIVER</span><span class="role-name">${fmtPlayer(court.receiver)}</span></div>
+            <div class="role-row"><span class="role-pill rec-partner">RECEIVER'S PARTNER</span><span class="role-name">${fmtPlayer(court.receiverPartner)}</span></div>
           </div>
         </div>`).join('')}
     </div>
@@ -1663,14 +1675,14 @@ function renderScores() {
         <div class="score-entry">
           <div class="score-entry-header">Court ${ci+1}</div>
           <div class="score-row">
-            <div class="score-team-label" style="color:var(--blue)">${court.teamA.join(' & ')}</div>
+            <div class="score-team-label" style="color:var(--blue)">${court.teamA.map(fmtPlayer).join(' & ')}</div>
             <div class="score-input-wrap">
               <input type="number" min="0" max="99" value="${sc.a}" id="score-${ri}-${ci}-a" oninput="previewWinner(${ri},${ci})">
             </div>
             ${aWin ? '<span class="winner-tag">WINNER</span>' : ''}
           </div>
           <div class="score-row">
-            <div class="score-team-label" style="color:var(--red)">${court.teamB.join(' & ')}</div>
+            <div class="score-team-label" style="color:var(--red)">${court.teamB.map(fmtPlayer).join(' & ')}</div>
             <div class="score-input-wrap">
               <input type="number" min="0" max="99" value="${sc.b}" id="score-${ri}-${ci}-b" oninput="previewWinner(${ri},${ci})">
             </div>
