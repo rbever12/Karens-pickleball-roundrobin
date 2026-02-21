@@ -1577,33 +1577,27 @@ function generateSchedule() {
 
   const numRounds = 8;
 
-  // Pad player list to exactly 12 slots with EMPTY sentinel
-  const paddedPlayers = [...players];
+  // Build the rotating pool: real players first, then subs, then EMPTY to pad to 12
+  // Subs are included in the rotation so they move between courts each round
+  const poolPlayers = [...players, ...subs];
+  const paddedPlayers = [...poolPlayers];
   while (paddedPlayers.length < totalSlots) paddedPlayers.push(EMPTY);
 
-  // Rotate the full 12-slot list each round (real names + EMPTY sentinels)
+  // Rotate the full 12-slot list each round
   let rotation    = [...paddedPlayers];
   const newRounds = [];
 
   for (let r = 0; r < numRounds; r++) {
     const active = rotation.slice(0, totalSlots);  // all 12 slots
 
-    // No one sits out in the 12-slot model — subs fill empty slots directly above
     const sittingNames = [];
     const subIn = [];
 
-    // Sort real players to front, then fill empty slots with subs (1 slot each), then blanks last
-    const realPlayers = active.filter(p => p !== EMPTY);
-    const emptyCount  = active.filter(p => p === EMPTY).length;
-
-    // Each sub fills exactly 1 empty slot
-    const subFill = [];
-    for (let i = 0; i < emptyCount; i++) {
-      if (i < subs.length) subFill.push(subs[i]);
-      else subFill.push(EMPTY);
-    }
-
-    const sorted = [...realPlayers, ...subFill];  // real players + subs (1 each) + remaining blanks
+    // Sort: real players + subs to front (preserving rotation order), EMPTY last
+    // This ensures courts fill from Court 1 → 2 → 3 with no gaps
+    const filledSlots = active.filter(p => p !== EMPTY);
+    const emptySlots  = active.filter(p => p === EMPTY);
+    const sorted      = [...filledSlots, ...emptySlots];
 
     // Now assign courts sequentially: slots 0-3 → Court 1, 4-7 → Court 2, 8-11 → Court 3
     const courts = [];
