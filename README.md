@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/25431391/README.md)
+lockCourtPickers() and unlockCourtPickers() functions, and call them in generateSchedule and clearAll: Update court rotation logicREADME.md](https://github.com/user-attachments/files/25431391/README.md)
 # 🏓 Pickleball Mixed Doubles Round Robin
 
 A free, no-install web app for organizing pickleball round robin sessions. Just open the file in any browser — no account, no app, no internet connection required after the first load.
