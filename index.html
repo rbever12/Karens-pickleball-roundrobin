@@ -901,9 +901,14 @@
     color: var(--text-muted);
     margin-bottom: 28px;
   }
+  .lock-input-wrap {
+    position: relative;
+    width: 100%;
+    margin-bottom: 14px;
+  }
   .lock-input {
     width: 100%;
-    padding: 14px 18px;
+    padding: 14px 48px 14px 18px;
     background: var(--court-bg);
     border: 2px solid var(--border);
     border-radius: 12px;
@@ -913,7 +918,7 @@
     text-align: center;
     letter-spacing: 3px;
     outline: none;
-    margin-bottom: 14px;
+    margin-bottom: 0;
     transition: border-color 0.2s;
   }
   .lock-input:focus { border-color: var(--green-light); }
@@ -928,6 +933,23 @@
     60%       { transform: translateX(-6px); }
     80%       { transform: translateX(6px); }
   }
+  .eye-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: color 0.2s;
+  }
+  .eye-toggle:hover { color: var(--green-bright); }
+  .eye-toggle svg { width: 22px; height: 22px; }
   .lock-error {
     font-size: 13px;
     color: var(--red);
@@ -950,17 +972,33 @@
 <div class="lock-screen" id="lockScreen">
   <div class="lock-card">
     <div class="lock-icon">🏓</div>
-    <div class="lock-title">MIXED DOUBLES</div>
+    <div class="lock-title">MIXED DOUBLES SESSION</div>
     <div class="lock-subtitle">Enter the session password to continue</div>
-    <input
-      class="lock-input"
-      id="lockInput"
-      type="password"
-      placeholder="••••••••"
-      maxlength="30"
-      onkeydown="if(event.key==='Enter') checkPassword()"
-      autocomplete="off"
-    >
+    <div class="lock-input-wrap">
+      <input
+        class="lock-input"
+        id="lockInput"
+        type="password"
+        placeholder="••••••••"
+        maxlength="30"
+        onkeydown="if(event.key==='Enter') checkPassword()"
+        autocomplete="off"
+      >
+      <button class="eye-toggle" id="eyeToggle" type="button" onclick="togglePasswordVisibility()" title="Show / Hide password">
+        <!-- Eye open (visible when password is hidden) -->
+        <svg id="eyeOpen" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        <!-- Eye closed (visible when password is shown) -->
+        <svg id="eyeClosed" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      </button>
+    </div>
     <div class="lock-error" id="lockError"></div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:16px;padding:14px" onclick="checkPassword()">
       🔓 Enter
@@ -971,6 +1009,23 @@
 <!-- Lock screen runs as a plain script so onclick= can find it immediately -->
 <script>
 const SESSION_PASSWORD = 'curly';
+
+function togglePasswordVisibility() {
+  const input    = document.getElementById('lockInput');
+  const eyeOpen  = document.getElementById('eyeOpen');
+  const eyeClosed = document.getElementById('eyeClosed');
+
+  if (input.type === 'password') {
+    input.type = 'text';
+    eyeOpen.style.display  = 'none';
+    eyeClosed.style.display = 'block';
+  } else {
+    input.type = 'password';
+    eyeOpen.style.display  = 'block';
+    eyeClosed.style.display = 'none';
+  }
+  input.focus();
+}
 
 function checkPassword() {
   const input      = document.getElementById('lockInput');
