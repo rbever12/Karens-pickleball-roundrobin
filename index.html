@@ -1118,7 +1118,7 @@ function checkPassword() {
       <div class="court-pickers">
         <div class="court-picker-wrap" id="courtPickerWrap1">
           <span class="court-picker-label">Court 1</span>
-          <select class="court-picker" id="courtPick1" onchange="validateCourtPicks()">
+          <select class="court-picker" id="courtPick1" onchange="onCourtPickChanged()">
             <option value="1" selected>1</option>
             <option value="2">2</option>
             <option value="3">3</option>
@@ -1143,7 +1143,7 @@ function checkPassword() {
         </div>
         <div class="court-picker-wrap" id="courtPickerWrap2">
           <span class="court-picker-label">Court 2</span>
-          <select class="court-picker" id="courtPick2" onchange="validateCourtPicks()">
+          <select class="court-picker" id="courtPick2" onchange="onCourtPickChanged()">
             <option value="1">1</option>
             <option value="2" selected>2</option>
             <option value="3">3</option>
@@ -1168,7 +1168,7 @@ function checkPassword() {
         </div>
         <div class="court-picker-wrap" id="courtPickerWrap3">
           <span class="court-picker-label">Court 3</span>
-          <select class="court-picker" id="courtPick3" onchange="validateCourtPicks()">
+          <select class="court-picker" id="courtPick3" onchange="onCourtPickChanged()">
             <option value="1">1</option>
             <option value="2">2</option>
             <option value="3" selected>3</option>
@@ -1341,8 +1341,6 @@ let courtNames     = {};
 let completedRounds = new Set();
 let locationData   = { venue:'', address:'', indoorOutdoor:'Indoor', notes:'', date:'', start:'', end:'', roundDuration:15 };
 let courtPicks     = { c1:1, c2:2, c3:3 };
-let _suppressCourtPickWrite = false; // prevent feedback loop
-let _courtPicksLoaded = false;       // true once Firebase court picks are received (or confirmed absent)
 
 // ===== UTILS =====
 function showToast(msg, isError=false) {
@@ -1410,13 +1408,10 @@ onValue(locationRef, snap => {
 onValue(courtPicksRef, snap => {
   if (snap.val()) {
     courtPicks = snap.val();
-    _suppressCourtPickWrite = true;
     document.getElementById('courtPick1').value = courtPicks.c1;
     document.getElementById('courtPick2').value = courtPicks.c2;
     document.getElementById('courtPick3').value = courtPicks.c3;
-    _suppressCourtPickWrite = false;
   }
-  _courtPicksLoaded = true;
   validateCourtPicks();
 });
 
@@ -1457,6 +1452,16 @@ function getSelectedCourts() {
   ];
 }
 
+// Called ONLY from the onchange= handlers on the <select> elements (i.e. user action)
+function onCourtPickChanged() {
+  const valid = validateCourtPicks();
+  if (valid) {
+    const picks = getSelectedCourts();
+    set(courtPicksRef, { c1: picks[0], c2: picks[1], c3: picks[2] });
+  }
+}
+
+// Pure UI validation — NEVER writes to Firebase
 function validateCourtPicks() {
   const picks     = getSelectedCourts();
   const unique    = new Set(picks);
@@ -1478,10 +1483,6 @@ function validateCourtPicks() {
     const blankCount = players.length >= 4 ? 12 - players.length : 0;
     const blankMsg = blankCount > 0 ? ` · ${blankCount} blank spot${blankCount > 1 ? 's' : ''}` : '';
     infoEl.textContent = `Courts ${picks.join(', ')} selected · 3 courts · ${players.length} player${players.length !== 1 ? 's' : ''}${blankMsg}`;
-    // Only write to Firebase if: not suppressed, AND court picks have been loaded from Firebase
-    if (!_suppressCourtPickWrite && _courtPicksLoaded) {
-      set(courtPicksRef, { c1: picks[0], c2: picks[1], c3: picks[2] });
-    }
   }
   return !hasDupe;
 }
@@ -1705,6 +1706,7 @@ function generateSchedule() {
 
   set(roundsRef, newRounds);
   set(courtNamesRef, newCourtNames);
+  set(courtPicksRef, { c1: pickedCourtNums[0], c2: pickedCourtNums[1], c3: pickedCourtNums[2] });
   set(scoresRef, null);
   set(completedRef, null);
 
@@ -2057,6 +2059,7 @@ window.removePlayer      = removePlayer;
 window.removeSub         = removeSub;
 window.generateSchedule  = generateSchedule;
 window.validateCourtPicks = validateCourtPicks;
+window.onCourtPickChanged = onCourtPickChanged;
 window.updateCourtName   = updateCourtName;
 window.markRoundComplete = markRoundComplete;
 window.previewWinner     = previewWinner;
