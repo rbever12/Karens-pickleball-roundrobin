@@ -1049,7 +1049,7 @@ function checkPassword() {
     <div class="live-board-header">
       <div class="live-dot"></div>
       <span class="live-board-title">Live Signup Board</span>
-      <span class="live-board-count" id="liveBoardCount">0 of 12 spots filled</span>
+      <span class="live-board-count" id="liveBoardCount">0 of 12 players</span>
     </div>
     <div class="live-names-grid" id="liveNamesGrid">
       <div class="live-empty-msg">⏳ Waiting for players to sign up...</div>
@@ -1137,7 +1137,7 @@ function checkPassword() {
           </select>
         </div>
       </div>
-      <div class="court-select-info" id="courtSelectInfo">Courts 1, 2, 3 selected · 3 courts · up to 12 players active per round</div>
+      <div class="court-select-info" id="courtSelectInfo">Courts 1, 2, 3 selected · 3 courts · players spread across all courts</div>
       <div class="court-conflict-msg" id="courtConflictMsg">⚠️ Duplicate court numbers — please select 3 different courts.</div>
     </div>
     <div class="signup-row">
@@ -1149,7 +1149,7 @@ function checkPassword() {
       <button class="btn btn-yellow" onclick="addSub()" id="addSubBtn">+ Add Sub</button>
     </div>
     <ul class="player-list" id="playerList">
-      <li class="empty-state"><div class="icon">👥</div>No players yet. Add up to 12 players above.</li>
+      <li class="empty-state"><div class="icon">👥</div>No players yet. Add 4–12 players above.</li>
     </ul>
   </div>
 
@@ -1365,19 +1365,30 @@ onValue(courtPicksRef, snap => {
 
 // ===== STATUS =====
 function updateStatus() {
-  const courts = Math.floor(players.length / 4);
   const safe = (id, val, prop='textContent') => {
     const el = document.getElementById(id);
     if (el) el[prop] = val;
   };
   safe('statPlayers', players.length);
   safe('statSubs', subs.length);
-  safe('statCourts', courts);
+  safe('statCourts', players.length >= 4 ? 3 : 0);
   safe('statRounds', rounds.length);
   safe('playerCountBadge', players.length + ' / 12');
   safe('subCountBadge', subs.length + ' / 2');
   safe('addBtn', players.length >= 12, 'disabled');
   safe('addSubBtn', subs.length >= 2, 'disabled');
+
+  // Update generate button text
+  const genBtn = document.getElementById('generateBtn');
+  if (genBtn) {
+    if (players.length < 4) {
+      genBtn.textContent = `⚡ Generate Schedule (need ${4 - players.length} more player${4 - players.length > 1 ? 's' : ''})`;
+    } else {
+      const blanks = 12 - players.length;
+      const blankText = blanks > 0 ? ` · ${blanks} blank spot${blanks > 1 ? 's' : ''}` : '';
+      genBtn.textContent = `⚡ Generate Schedule (3 courts${blankText})`;
+    }
+  }
 }
 
 // ===== COURT PICKER SYNC =====
@@ -1405,8 +1416,11 @@ function validateCourtPicks() {
     sel.classList.toggle('conflict', hasDupe && picks.filter(p => p === picks[i]).length > 1);
   });
   conflictEl.classList.toggle('visible', hasDupe);
+
   if (!hasDupe) {
-    infoEl.textContent = `Courts ${picks.join(', ')} selected · 3 courts · up to 12 players active per round`;
+    const blankCount = players.length >= 4 ? 12 - players.length : 0;
+    const blankMsg = blankCount > 0 ? ` · ${blankCount} blank spot${blankCount > 1 ? 's' : ''}` : '';
+    infoEl.textContent = `Courts ${picks.join(', ')} selected · 3 courts · ${players.length} player${players.length !== 1 ? 's' : ''}${blankMsg}`;
     if (!_suppressCourtPickWrite) {
       set(courtPicksRef, { c1: picks[0], c2: picks[1], c3: picks[2] });
     }
@@ -1466,11 +1480,15 @@ function renderLiveBoard() {
   const total = players.length + subs.length;
   if (total === 0) {
     grid.innerHTML = '<div class="live-empty-msg">⏳ Waiting for players to sign up...</div>';
-    count.textContent = '0 of 12 spots filled';
+    count.textContent = '0 of 12 players';
     return;
   }
-  const spotsLeft = 12 - players.length;
-  count.textContent = `${players.length} of 12 spots filled${subs.length > 0 ? ' · ' + subs.length + ' sub' + (subs.length > 1 ? 's' : '') : ''}${spotsLeft > 0 ? ' · ' + spotsLeft + ' open' : ' · Full!'}`;
+  const blanks = 12 - players.length;
+  let statusParts = [`${players.length} of 12 players`];
+  if (blanks > 0) statusParts.push(`${blanks} blank spot${blanks > 1 ? 's' : ''}`);
+  else statusParts.push('Full!');
+  if (subs.length > 0) statusParts.push(`${subs.length} sub${subs.length > 1 ? 's' : ''}`);
+  count.textContent = statusParts.join(' · ');
   let html = players.map(p => `
     <div class="live-name-card">
       <div class="live-name-avatar">${p.charAt(0).toUpperCase()}</div>
@@ -1491,7 +1509,7 @@ function addPlayer() {
   const input = document.getElementById('playerNameInput');
   const name  = input.value.trim();
   if (!name) return showToast('Please enter a name.', true);
-  if (players.length >= 12) return showToast('Maximum 12 players allowed.', true);
+  if (players.length >= 12) return showToast('Maximum 12 players reached.', true);
   if ([...players, ...subs].some(p => p.toLowerCase() === name.toLowerCase()))
     return showToast('Name already registered.', true);
   const updated = [...players, name];
@@ -1537,7 +1555,7 @@ function renderPlayerList() {
   const ul = document.getElementById('playerList');
   let html = '';
   if (players.length === 0) {
-    html += '<li class="empty-state"><div class="icon">👥</div>No players yet. Add up to 12 players above.</li>';
+    html += '<li class="empty-state"><div class="icon">👥</div>No players yet. Add 4–12 players above.</li>';
   } else {
     html += players.map((p, i) => `
       <li class="player-item">
@@ -1565,26 +1583,40 @@ function renderPlayerList() {
 // ===== SCHEDULE GENERATION =====
 function generateSchedule() {
   if (players.length < 4) return showToast('Need at least 4 players to generate a schedule.', true);
+  if (players.length > 12) return showToast('Maximum 12 players allowed.', true);
   if (!validateCourtPicks()) return showToast('Please select 3 different court numbers.', true);
 
-  const EMPTY = '__EMPTY__';
-  const numCourts       = 3;
-  const totalSlots      = 12;
+  const EMPTY     = '__EMPTY__';
+  const numCourts  = 3;
+  const totalSlots = 12;
+  const numPlayers = players.length;
+
   const pickedCourtNums = getSelectedCourts();
   const newCourtNames   = {};
   pickedCourtNums.forEach((num, i) => { newCourtNames[i] = `Court ${num}`; });
 
-  const numRounds  = 8;
-  const numPlayers = players.length;
-  const openSlots  = totalSlots - numPlayers;
+  const numRounds = 8;
 
-  // Rotate only real players. Empty slots are always blank — subs are not placed in schedule.
-  let realRotation = [...players];
-  const newRounds  = [];
+  // Shuffle helper (Fisher-Yates)
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // Build rounds: each round, shuffle the real players into 12 slots spread across 3 courts.
+  // Blank slots fill the remaining positions so all 3 courts are always shown.
+  const newRounds = [];
+
+  // Use a round-robin rotation on the shuffled player list for fair distribution
+  let rotationOrder = shuffle(players);
 
   for (let r = 0; r < numRounds; r++) {
-    // Build 12-slot list: rotated real players + blanks at the end
-    const slotted = [...realRotation, ...Array(openSlots).fill(EMPTY)];
+    // Spread players across all 12 slots, fill the rest with EMPTY
+    const slotted = [...rotationOrder, ...Array(totalSlots - numPlayers).fill(EMPTY)];
 
     const courts = [];
     for (let c = 0; c < numCourts; c++) {
@@ -1608,8 +1640,8 @@ function generateSchedule() {
 
     // Classic round-robin rotation: anchor index 0, move last to index 1
     if (numPlayers > 1) {
-      const last = realRotation.pop();
-      realRotation.splice(1, 0, last);
+      const last = rotationOrder.pop();
+      rotationOrder.splice(1, 0, last);
     }
   }
 
@@ -1618,7 +1650,9 @@ function generateSchedule() {
   set(scoresRef, null);
   set(completedRef, null);
 
-  showToast(`✅ Schedule generated — 8 rounds on Courts ${pickedCourtNums.join(', ')}!`);
+  const blankCount = totalSlots - numPlayers;
+  const blankMsg = blankCount > 0 ? ` (${blankCount} blank spot${blankCount > 1 ? 's' : ''} — fill as more players join)` : '';
+  showToast(`✅ Schedule generated — 8 rounds on Courts ${pickedCourtNums.join(', ')}!${blankMsg}`);
 
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1637,7 +1671,7 @@ function renderSchedule() {
   const div  = document.getElementById('scheduleContent');
   const ctrl = document.getElementById('scheduleControls');
   if (!rounds || rounds.length === 0) {
-    div.innerHTML = '<div class="empty-state" style="padding:60px 0"><div class="icon">📅</div>Sign up players and click "Generate Schedule" to begin.</div>';
+    div.innerHTML = '<div class="empty-state" style="padding:60px 0"><div class="icon">📅</div>Sign up 4–12 players and click "Generate Schedule" to begin.</div>';
     ctrl.style.display = 'none';
     return;
   }
