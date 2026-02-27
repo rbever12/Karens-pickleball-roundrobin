@@ -80,4 +80,3 @@ Found a bug or have a feature idea? Feel free to:
 ## 📄 License
 
 Free to use, share, and modify. No attribution required. Enjoy the game! 🎾
-lockCourtPickers() and unlockCourtPickers() functions, and call them in generateSchedule and clearAll: Update court rotation logicREADME.md](https://github.com/user-attachments/files/25431391/README.md)
