@@ -1342,6 +1342,7 @@ let completedRounds = new Set();
 let locationData   = { venue:'', address:'', indoorOutdoor:'Indoor', notes:'', date:'', start:'', end:'', roundDuration:15 };
 let courtPicks     = { c1:1, c2:2, c3:3 };
 let _suppressCourtPickWrite = false; // prevent feedback loop
+let _courtPicksLoaded = false;       // true once Firebase court picks are received (or confirmed absent)
 
 // ===== UTILS =====
 function showToast(msg, isError=false) {
@@ -1414,8 +1415,9 @@ onValue(courtPicksRef, snap => {
     document.getElementById('courtPick2').value = courtPicks.c2;
     document.getElementById('courtPick3').value = courtPicks.c3;
     _suppressCourtPickWrite = false;
-    validateCourtPicks();
   }
+  _courtPicksLoaded = true;
+  validateCourtPicks();
 });
 
 // ===== STATUS =====
@@ -1476,7 +1478,8 @@ function validateCourtPicks() {
     const blankCount = players.length >= 4 ? 12 - players.length : 0;
     const blankMsg = blankCount > 0 ? ` · ${blankCount} blank spot${blankCount > 1 ? 's' : ''}` : '';
     infoEl.textContent = `Courts ${picks.join(', ')} selected · 3 courts · ${players.length} player${players.length !== 1 ? 's' : ''}${blankMsg}`;
-    if (!_suppressCourtPickWrite) {
+    // Only write to Firebase if: not suppressed, AND court picks have been loaded from Firebase
+    if (!_suppressCourtPickWrite && _courtPicksLoaded) {
       set(courtPicksRef, { c1: picks[0], c2: picks[1], c3: picks[2] });
     }
   }
